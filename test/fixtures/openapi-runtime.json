@@ -1,0 +1,253 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpenAPI runtime generator fixture",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/widgets": {
+      "post": {
+        "operationId": "catalog.createWidget",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WidgetResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Created without a response body"
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationException"
+          }
+        }
+      }
+    },
+    "/ping": {
+      "post": {
+        "operationId": "system.ping",
+        "responses": {
+          "200": {
+            "description": "Pong"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "ValidationException": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "errors": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "required": ["message", "errors"],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SuccessResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "success"
+          }
+        },
+        "required": ["status"]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["message"],
+        "additionalProperties": false
+      },
+      "StringSettings": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
+      "Cat": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "cat"
+          },
+          "meows": {
+            "type": "boolean"
+          }
+        },
+        "required": ["kind", "meows"],
+        "additionalProperties": false
+      },
+      "Dog": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "dog"
+          },
+          "barks": {
+            "type": "boolean"
+          }
+        },
+        "required": ["kind", "barks"],
+        "additionalProperties": false
+      },
+      "Pet": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Cat"
+          },
+          {
+            "$ref": "#/components/schemas/Dog"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind"
+        }
+      },
+      "WidgetInput": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["admin", "viewer"]
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "code": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 8,
+            "pattern": "^[A-Z]+$"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "settings": {
+            "$ref": "#/components/schemas/StringSettings"
+          },
+          "pet": {
+            "$ref": "#/components/schemas/Pet"
+          },
+          "externalId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "role",
+          "score",
+          "code",
+          "tags",
+          "settings",
+          "pet",
+          "externalId"
+        ]
+      },
+      "Widget": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WidgetInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": ["id"]
+          }
+        ]
+      },
+      "WidgetResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SuccessResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Widget"
+              }
+            },
+            "required": ["data"]
+          }
+        ]
+      },
+      "Obsolete": {
+        "type": "string"
+      }
+    }
+  }
+}
+

@@ -1,0 +1,58 @@
+{
+  "name": "openapi-contract-kit",
+  "version": "0.1.0",
+  "description": "Generate type-safe TypeScript contracts and runtime validators from JSON OpenAPI 3.1 documents.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "./src/index.mjs",
+  "types": "./src/index.d.ts",
+  "bin": {
+    "openapi-contract-kit": "./bin/openapi-contract-kit.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    },
+    "./runtime": {
+      "types": "./src/runtime.d.ts",
+      "import": "./src/runtime.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "src",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Clinsmann/openapi-contract-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Clinsmann/openapi-contract-kit/issues"
+  },
+  "homepage": "https://github.com/Clinsmann/openapi-contract-kit#readme",
+  "keywords": [
+    "openapi",
+    "openapi3",
+    "typescript",
+    "code-generation",
+    "runtime-validation",
+    "api-contracts",
+    "json-schema",
+    "cli"
+  ]
+}
