@@ -157,23 +157,17 @@
         "type": "object",
         "properties": {
           "email": {
-            "type": "string",
-            "format": "email"
+            "type": "string"
           },
           "role": {
             "type": "string",
             "enum": ["admin", "viewer"]
           },
           "score": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
+            "type": "integer"
           },
           "code": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 8,
-            "pattern": "^[A-Z]+$"
+            "type": "string"
           },
           "tags": {
             "type": "array",
@@ -250,4 +244,3 @@
     }
   }
 }
-

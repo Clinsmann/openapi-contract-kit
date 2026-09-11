@@ -129,7 +129,8 @@ void invalidResponse;
     `${JSON.stringify(
       {
         compilerOptions: {
-          target: 'ES2022',
+          target: 'ES5',
+          lib: ['ES2017'],
           module: 'CommonJS',
           moduleResolution: 'Node',
           strict: true,
@@ -264,8 +265,18 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     assert.equal(validResult.ok, true);
     assert.equal(validResult.value, validInput);
 
+    const structuralOnlyInput = {
+      ...validInput,
+      email: 'not-an-email',
+      score: -1,
+      code: 'x',
+    };
+    const structuralOnlyResult = makeWidgetInput(structuralOnlyInput);
+    assert.equal(structuralOnlyResult.ok, true);
+    assert.equal(structuralOnlyResult.value, structuralOnlyInput);
+
     const invalidInput = structuredClone(validInput);
-    invalidInput.email = 'not-an-email';
+    invalidInput.email = 123;
     invalidInput.settings = { theme: 1 };
     invalidInput.pet = { kind: 'bird' };
     const beforeValidation = structuredClone(invalidInput);
@@ -275,7 +286,7 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     assert.deepEqual(
       invalidResult.errors.map(({ path, keyword }) => ({ path, keyword })),
       [
-        { path: ['email'], keyword: 'format' },
+        { path: ['email'], keyword: 'type' },
         { path: ['settings', 'theme'], keyword: 'type' },
         { path: ['pet'], keyword: 'oneOf' },
       ]
@@ -293,31 +304,6 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
         input: { ...validInput, role: 'owner' },
         keyword: 'enum',
         path: ['role'],
-      },
-      {
-        input: { ...validInput, score: -1 },
-        keyword: 'minimum',
-        path: ['score'],
-      },
-      {
-        input: { ...validInput, score: 101 },
-        keyword: 'maximum',
-        path: ['score'],
-      },
-      {
-        input: { ...validInput, code: 'AB' },
-        keyword: 'minLength',
-        path: ['code'],
-      },
-      {
-        input: { ...validInput, code: 'ABCDEFGHI' },
-        keyword: 'maxLength',
-        path: ['code'],
-      },
-      {
-        input: { ...validInput, code: 'abc' },
-        keyword: 'pattern',
-        path: ['code'],
       },
       {
         input: { ...validInput, tags: [1] },

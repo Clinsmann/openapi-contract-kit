@@ -356,7 +356,8 @@ export function make${name}(input: unknown): Result<${name}> {
     lines.push(
       'if (Array.isArray(value)) {',
       ...indent([
-        'for (const [index, item] of value.entries()) {',
+        'for (let index = 0; index < value.length; index += 1) {',
+        ...indent(['const item = value[index];']),
         ...indent([`${itemValidator}(item, [...path, index], errors);`]),
         '}',
       ]),

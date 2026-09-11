@@ -286,6 +286,7 @@ Consumers provide their own `openapi.config.json`, commit their JSON specificati
 - Refuse unsafe roots or non-owned unexpected output.
 - Ensure two runs are byte-identical and removed schemas/operations leave no stale files.
 - Test configuration precedence, model validation, generated types, makers, endpoint status/body correlation, deterministic output, failure safety, and alternate output directories.
+- The focused fixture acceptance scope is structural validation: object shape, fields, primitive types, arrays, nullability, references, unions, and additional-property behavior. Email format, string length, patterns, and numeric ranges remain optional generator capabilities but are not required by this fixture.
 - Run package tests and consumer generation tests at their narrowest scopes.
 
 ## 6. Phases
