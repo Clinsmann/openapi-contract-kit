@@ -2,7 +2,7 @@
 
 Planned project work, in implementation order:
 
-- [ ] Migrate the build and package entry points to Rspack.
+- [x] Migrate the build and package entry points to Rspack.
 - [x] Migrate package management from npm to pnpm; commit the pnpm lockfile and update contributor commands.
 - [ ] Replace `.mjs` source and CLI files with TypeScript equivalents, preserving the public exports and generated output.
 - [ ] Add basic linting and formatting with package scripts and CI coverage.
@@ -409,3 +409,55 @@ production mode
 - compact error codes
 - minimal metadata
 - smaller generated code
+
+
+
+
+
+
+
+
+
+-----------------
+
+
+
+
+
+
+
+
+
+That means your library should validate both structure and schema-level constraints.
+
+For example, it should validate:
+
+object vs array vs string vs number vs boolean vs null
+required fields
+optional fields
+nullable fields
+nested objects
+arrays and array item types
+enums
+oneOf
+allOf
+discriminators
+$ref
+additionalProperties
+minimum / maximum numbers
+min/max string length
+regex patterns
+formats like email
+documented request bodies
+documented response bodies
+documented response status codes
+bodyless requests/responses as null
+
+
+
+
+Questions suggestions to architecture:
+1. can we make the normaliser work in a way that we can use json or yaml based on configuration provided, ot the file exention?
+
+
+ ['quickpay-api.ts', emitRootTypes(model)], why do we have this, quickpay is another project? what is going on?
