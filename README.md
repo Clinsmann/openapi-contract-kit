@@ -14,8 +14,10 @@ JSON-first OpenAPI 3.1 contract generation and runtime validation for TypeScript
 ## Installation
 
 ```bash
-npm install --save-dev openapi-contract-kit
+pnpm add -D openapi-contract-kit
 ```
+
+Requires Node.js 26 and pnpm 12.3.4.
 
 ## Quick start
 
@@ -42,7 +44,7 @@ Add a generation script:
 Generate contracts:
 
 ```bash
-npm run openapi:generate
+pnpm run openapi:generate
 ```
 
 ## Generated validation
@@ -74,9 +76,9 @@ The generator supports JSON OpenAPI 3.1 documents with objects, primitive types,
 ## Development
 
 ```bash
-npm install
-npm test
-npm run pack:check
+pnpm install
+pnpm test
+pnpm run pack:check
 ```
 
 ## Versioning

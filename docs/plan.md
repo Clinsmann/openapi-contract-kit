@@ -57,7 +57,7 @@ Create:
 Modify:
 
 - `package.json` — add `"openapi:generate": "node scripts/generateOpenApiRuntime.mjs"`, runnable as `pnpm openapi:generate` (the script itself is plain Node, so it also runs fine under `yarn` or `npm run` in whatever project it's copied into)
-- `yarn.lock` (this project's own install only — copies of the generator into other projects don't carry this file)
+- `pnpm-lock.yaml` (this project's own install only — copies of the generator into other projects don't carry this file)
 
 Remove:
 
