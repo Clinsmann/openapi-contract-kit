@@ -51,17 +51,41 @@ pnpm run openapi:generate
 
 ## Generated validation
 
-Schema makers return a discriminated result:
+Generated makers validate input and return a discriminated result. They do not
+throw validation errors, so the caller decides whether to log, return, throw, or
+otherwise handle the failure:
 
 ```ts
-const result = makeLoginRequest(input);
+import { makeWidgetInput } from './generated/schemas/WidgetInput.js';
 
-if (!result.ok) {
-  console.error(result.errors);
+try {
+  const result = makeWidgetInput(input);
+
+  if (!result.ok) {
+    console.error(result.errors);
+    throw new Error('The widget input is invalid');
+  }
+
+  return result.value;
+} catch (error) {
+  // Handle the validation error or application error here.
+  console.error(error);
 }
 ```
 
 Validation errors contain a path, keyword, and message. Successful validation returns the original input without mutating or cloning it.
+
+When no application exception is needed, handle the result directly:
+
+```ts
+const result = makeWidgetInput(input);
+
+if (!result.ok) {
+  return result.errors;
+}
+
+const validatedInput = result.value;
+```
 
 The focused fixture and acceptance tests cover structural validation, primitive types, references, unions, additional-property behavior, and declared email format validation. String length, patterns, and numeric ranges remain available when declared in consumer schemas.
 
