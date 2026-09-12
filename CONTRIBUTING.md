@@ -2,7 +2,7 @@
 
 ## Development
 
-Use Node.js 26 and pnpm 12.3.4.
+Use Node.js 24 or newer and pnpm 12.3.4.
 
 1. Install dependencies with `pnpm install`.
 2. Run `pnpm run lint`.

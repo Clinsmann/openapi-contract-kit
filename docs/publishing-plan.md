@@ -29,10 +29,10 @@ In npm package settings, add a GitHub Actions Trusted Publisher with:
 - User or organization: `Clinsmann`
 - Repository: `openapi-contract-kit`
 - Workflow filename: `publish.yml`
-- Environment: none
-- Allowed action: direct `pnpm publish --provenance`
+- Environment: leave blank unless the workflow uses a GitHub Actions environment
+- Allowed action: direct publishing (the workflow runs `pnpm publish --provenance --no-git-checks`)
 
-The workflow must use a GitHub-hosted runner, `id-token: write`, Node 26, pnpm `12.3.4`, and `pnpm publish --provenance`. Release-build dependency caching remains disabled.
+The workflow must use a GitHub-hosted runner, `id-token: write`, Node 24 or newer, pnpm `12.3.4`, and `pnpm publish --provenance --no-git-checks`. Release-build dependency caching remains disabled.
 
 ## Future release procedure
 

@@ -19,7 +19,7 @@ JSON-first OpenAPI 3.1 contract generation and runtime validation for TypeScript
 pnpm add -D openapi-contract-kit
 ```
 
-Requires Node.js 26 and pnpm 12.3.4.
+Requires Node.js 24 or newer and pnpm 12.3.4.
 
 ## Quick start
 
