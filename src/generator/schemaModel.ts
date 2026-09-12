@@ -97,7 +97,11 @@ type RawSchemaEntry = {
   readonly rawSchema: unknown;
 };
 
-function requireNumber(value: unknown, keyword: string, location: string): number {
+function requireNumber(
+  value: unknown,
+  keyword: string,
+  location: string
+): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new Error(
       `Schema keyword "${keyword}" at ${location} must be finite`
@@ -136,7 +140,9 @@ function isSchemaType(value: unknown): value is SchemaType {
 }
 
 function isStringArray(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+  );
 }
 
 export function toPascalIdentifier(value: string, fallback = 'Schema'): string {
@@ -168,12 +174,19 @@ export class SchemaRegistry {
   #rawSchemas = new Map<string, RawSchemaEntry>();
   #rootPath: string;
 
-  constructor(documents: import('./documents.js').DocumentStore, rootPath: string) {
+  constructor(
+    documents: import('./documents.js').DocumentStore,
+    rootPath: string
+  ) {
     this.#documents = documents;
     this.#rootPath = rootPath;
   }
 
-  register(rawSchema: unknown, context: DocumentContext, suggestedName: string): string {
+  register(
+    rawSchema: unknown,
+    context: DocumentContext,
+    suggestedName: string
+  ): string {
     const canonicalKey = locationOf(context.documentPath, context.pointer);
     const existing = this.#rawSchemas.get(canonicalKey);
 
@@ -208,7 +221,11 @@ export class SchemaRegistry {
     context: DocumentContext,
     suggestedName: string
   ): Promise<string> {
-    if (isRecord(schema) && schema.$ref !== undefined && Object.keys(schema).length === 1) {
+    if (
+      isRecord(schema) &&
+      schema.$ref !== undefined &&
+      Object.keys(schema).length === 1
+    ) {
       const resolved = await this.#documents.resolveReference(
         schema.$ref,
         context.documentPath

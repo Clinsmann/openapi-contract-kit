@@ -59,7 +59,11 @@ class MakerRenderer {
     this.#schemaNames = new Set(model.schemas.map(({ name }) => name));
   }
 
-  render(name: string, schema: NormalizedSchema, runtimeImport: string): string {
+  render(
+    name: string,
+    schema: NormalizedSchema,
+    runtimeImport: string
+  ): string {
     const rootValidator = this.#emitNode(schema);
     const makerImports = [...this.#referencedSchemas]
       .sort()
@@ -348,7 +352,11 @@ export function make${name}(input: unknown): Result<${name}> {
 
     lines.push(`if (typeof value === 'number' && Number.isFinite(value)) {`);
     const checks: string[] = [];
-    const addCheck = (expression: string, keyword: string, message: string): void => {
+    const addCheck = (
+      expression: string,
+      keyword: string,
+      message: string
+    ): void => {
       checks.push(
         `if (${expression}) {`,
         ...indent([
@@ -388,10 +396,7 @@ export function make${name}(input: unknown): Result<${name}> {
     lines.push(...indent(checks), '}');
   }
 
-  #renderArrayConstraints(
-    lines: string[],
-    itemValidator: string | null
-  ): void {
+  #renderArrayConstraints(lines: string[], itemValidator: string | null): void {
     if (itemValidator === null) {
       return;
     }

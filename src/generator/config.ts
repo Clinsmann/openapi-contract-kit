@@ -44,7 +44,11 @@ function parseArguments(argv: readonly string[], cwd: string): CliOptions {
   return values;
 }
 
-function requirePath(config: UnknownRecord, key: string, configPath: string): string {
+function requirePath(
+  config: UnknownRecord,
+  key: string,
+  configPath: string
+): string {
   const value = config[key];
 
   if (typeof value !== 'string' || value.trim().length === 0) {

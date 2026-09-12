@@ -1,10 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 
-import type {
-  ResolvedReference,
-  UnknownRecord,
-} from './types.js';
+import type { ResolvedReference, UnknownRecord } from './types.js';
 
 export function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -14,7 +11,10 @@ export function escapePointerSegment(segment: string): string {
   return segment.replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
-export function pointerChild(pointer: string, segment: string | number): string {
+export function pointerChild(
+  pointer: string,
+  segment: string | number
+): string {
   return `${pointer}/${escapePointerSegment(String(segment))}`;
 }
 

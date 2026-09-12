@@ -50,10 +50,7 @@ async function createFixtureProject(): Promise<FixtureProject> {
   const directory = await mkdtemp(join(tmpdir(), 'quickpay-openapi-runtime-'));
   const specPath = join(directory, 'openapi.json');
   const outputPath = join(directory, 'src/api/generated');
-  const packageDirectory = join(
-    directory,
-    'node_modules/openapi-contract-kit'
-  );
+  const packageDirectory = join(directory, 'node_modules/openapi-contract-kit');
   const configPath = join(directory, 'openapi.config.json');
 
   await cp(fixturePath, specPath);
@@ -167,9 +164,13 @@ void invalidResponse;
     )}\n`
   );
 
-  await execFileAsync(process.env.TSC_BIN ?? 'tsc', ['--project', tsconfigPath], {
-    cwd: projectRoot,
-  });
+  await execFileAsync(
+    process.env.TSC_BIN ?? 'tsc',
+    ['--project', tsconfigPath],
+    {
+      cwd: projectRoot,
+    }
+  );
 }
 
 async function captureMainOutput({
@@ -185,13 +186,13 @@ async function captureMainOutput({
     configurable: true,
     value: isTTY,
   });
-    Object.defineProperty(stream, 'write', {
-      configurable: true,
-      value: (chunk: unknown) => {
-        chunks.push(String(chunk));
-        return true;
-      },
-    });
+  Object.defineProperty(stream, 'write', {
+    configurable: true,
+    value: (chunk: unknown) => {
+      chunks.push(String(chunk));
+      return true;
+    },
+  });
 
   try {
     await main(argv);

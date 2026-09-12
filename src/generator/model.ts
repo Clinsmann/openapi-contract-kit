@@ -63,7 +63,9 @@ class ModelBuilder {
     this.#validateOpenApiRoot();
     this.#seedComponentSchemas();
     await this.#seedResponseSchemas();
-    const operations = await this.#buildOperations(this.#collectOperationDrafts());
+    const operations = await this.#buildOperations(
+      this.#collectOperationDrafts()
+    );
 
     return {
       operations: operations.sort((left, right) =>
@@ -100,9 +102,7 @@ class ModelBuilder {
     const version = rootDocument.openapi;
 
     if (typeof version !== 'string' || !version.startsWith('3.1.')) {
-      throw new Error(
-        `OpenAPI document "${rootPath}" must use OpenAPI 3.1`
-      );
+      throw new Error(`OpenAPI document "${rootPath}" must use OpenAPI 3.1`);
     }
     requireRecord(
       rootDocument.paths,
@@ -501,6 +501,8 @@ class ModelBuilder {
   }
 }
 
-export async function buildOpenApiModel(specPath: string): Promise<OpenApiModel> {
+export async function buildOpenApiModel(
+  specPath: string
+): Promise<OpenApiModel> {
   return new ModelBuilder().build(specPath);
 }

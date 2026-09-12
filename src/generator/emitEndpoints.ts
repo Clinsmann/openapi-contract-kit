@@ -1,8 +1,4 @@
-import type {
-  GeneratorConfig,
-  OpenApiModel,
-  ResponseModel,
-} from './types.js';
+import type { GeneratorConfig, OpenApiModel, ResponseModel } from './types.js';
 
 function renderResponseType(responses: readonly ResponseModel[]): string {
   if (responses.length === 0) {

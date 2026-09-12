@@ -1,0 +1,8 @@
+# Dependencies and generated/transient output
+node_modules/
+dist/
+coverage/
+pnpm-lock.yaml
+
+# Documentation is intentionally outside the formatting scope
+*.md

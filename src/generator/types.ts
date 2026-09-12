@@ -3,13 +3,7 @@ export type UnknownRecord = Record<string, unknown>;
 export type JsonPrimitive = boolean | null | number | string;
 
 export type SchemaType =
-  | 'array'
-  | 'boolean'
-  | 'integer'
-  | 'null'
-  | 'number'
-  | 'object'
-  | 'string';
+  'array' | 'boolean' | 'integer' | 'null' | 'number' | 'object' | 'string';
 
 export type DocumentContext = {
   readonly documentPath: string;

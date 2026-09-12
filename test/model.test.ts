@@ -56,7 +56,10 @@ async function withDirectory<T>(
   }
 }
 
-async function expectModelFailure(spec: unknown, expected: RegExp): Promise<void> {
+async function expectModelFailure(
+  spec: unknown,
+  expected: RegExp
+): Promise<void> {
   await withDirectory(async (directory) => {
     const specPath = join(directory, 'openapi.json');
     await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);

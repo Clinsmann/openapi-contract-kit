@@ -34,7 +34,9 @@ function isManifest(value: unknown): value is OutputManifest {
     return false;
   }
   const files = Reflect.get(value, 'files');
-  return Array.isArray(files) && files.every((file) => typeof file === 'string');
+  return (
+    Array.isArray(files) && files.every((file) => typeof file === 'string')
+  );
 }
 
 async function exists(path: string): Promise<boolean> {
