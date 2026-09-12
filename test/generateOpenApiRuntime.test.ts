@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import test from 'node:test';
+import { test } from 'vitest';
 
 import {
   generateOpenApiRuntime,
