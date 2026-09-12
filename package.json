@@ -35,15 +35,19 @@
     "build": "tsc --project tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "lint": "eslint .",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test:unit": "vitest run test/generateOpenApiRuntime.test.ts test/model.test.ts --pool=forks",
     "test": "pnpm run build && pnpm run test:unit",
     "pack:check": "pnpm run build && pnpm pack --dry-run"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.5.1",
+    "eslint": "^10.10.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^5.0.0"
   },
   "repository": {
