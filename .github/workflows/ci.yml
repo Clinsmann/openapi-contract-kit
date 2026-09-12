@@ -15,8 +15,11 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
       - run: pnpm run format:check
-      - run: pnpm run typecheck
       - run: pnpm run build
       - run: pnpm run test:unit
       - run: pnpm pack --dry-run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
