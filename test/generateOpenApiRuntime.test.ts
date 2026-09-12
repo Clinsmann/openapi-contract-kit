@@ -20,6 +20,8 @@ import {
   main,
 } from '../src/generator/generateOpenApiRuntime.js';
 import { resolveGeneratorConfig } from '../src/generator/config.js';
+import { emitSchemaMakers } from '../src/generator/emitMakers.js';
+import { buildOpenApiModel } from '../src/generator/model.js';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = process.cwd();
@@ -331,10 +333,18 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
       join(project.outputPath, 'schemas/WidgetInput.ts'),
       'utf8'
     );
+    const sharedValidators = await readFile(
+      join(project.outputPath, 'schemas/validators.ts'),
+      'utf8'
+    );
     assert.match(types, /export type WidgetInput =/);
     assert.match(types, /export type ShapeOfWidgetInput = WidgetInput;/);
-    assert.match(widgetInputMaker, /new RegExp\(/u);
-    assert.doesNotMatch(widgetInputMaker, /\/\^\[A-Za-z0-9/u);
+    assert.doesNotMatch(widgetInputMaker, /new RegExp\(/u);
+    assert.match(sharedValidators, /new RegExp\(/u);
+    assert.equal(
+      (sharedValidators.match(/Expected email format/gu) ?? []).length,
+      1
+    );
 
     await compileFixtureProject(project.directory);
 
@@ -490,6 +500,48 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     assert.equal(makePingResponse.error({ status: 500, body: null }).ok, false);
   } finally {
     await rm(project.directory, { force: true, recursive: true });
+  }
+});
+
+test('deduplicates identical inline validators across schema makers', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'quickpay-openapi-dedupe-'));
+  const specPath = join(directory, 'openapi.json');
+
+  try {
+    const spec = JSON.parse(await readFile(fixturePath, 'utf8')) as {
+      components: { schemas: Record<string, unknown> };
+    };
+    spec.components.schemas.SignupInput = {
+      type: 'object',
+      properties: {
+        email: { type: 'string', format: 'email' },
+      },
+      required: ['email'],
+    };
+    await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+
+    const model = await buildOpenApiModel(specPath);
+    const files = emitSchemaMakers(model, {
+      configPath: join(directory, 'openapi.config.json'),
+      outDir: join(directory, 'generated'),
+      runtimeImport: 'openapi-contract-kit/runtime',
+      specPath,
+    });
+    const validators = files.get('schemas/validators.ts');
+    const widgetInput = files.get('schemas/WidgetInput.ts');
+    const signupInput = files.get('schemas/SignupInput.ts');
+
+    assert.notEqual(validators, undefined);
+    assert.notEqual(widgetInput, undefined);
+    assert.notEqual(signupInput, undefined);
+    assert.equal(
+      (validators?.match(/Expected email format/gu) ?? []).length,
+      1
+    );
+    assert.doesNotMatch(widgetInput ?? '', /Expected email format/u);
+    assert.doesNotMatch(signupInput ?? '', /Expected email format/u);
+  } finally {
+    await rm(directory, { force: true, recursive: true });
   }
 });
 
