@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4] - 2026-09-12
+
+- Lowered the supported Node.js baseline to Node 24 and added CI coverage for Node 24 and 26.
+
 ## [0.0.3] - 2026-09-12
 
 - Fixed GitHub Release publishing from detached tag checkouts by disabling pnpm branch checks in the publish workflow.
