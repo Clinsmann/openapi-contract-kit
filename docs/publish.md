@@ -46,6 +46,12 @@ Use this structure for the final entry:
 
 The changelog entry is the canonical repository release note. GitHub Release notes are generated separately from the same tag history in step 5 and must be reviewed before publishing.
 
+Also prepare a concise GitHub Release title in this format:
+
+```text
+v$VERSION — Short user-facing summary
+```
+
 ## 3. Validate the release
 
 ```bash
@@ -77,7 +83,7 @@ With GitHub CLI:
 
 ```bash
 VERSION="$(node -p "require('./package.json').version")"
-gh release create "v$VERSION" --verify-tag --title "v$VERSION" --generate-notes
+gh release create "v$VERSION" --verify-tag --title "v$VERSION — Short user-facing summary" --generate-notes
 ```
 
 `--generate-notes` compares `v$VERSION` with the previous GitHub release/tag and generates the release notes from those changes. Review the generated notes before publishing.
