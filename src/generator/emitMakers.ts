@@ -2,50 +2,21 @@ import type {
   GeneratorConfig,
   NormalizedSchema,
   OpenApiModel,
-  SchemaProperty,
-  SchemaType,
-  StandardSchema,
 } from './types.js';
-
-type ChildFunctions = {
-  readonly additionalProperties: string | null;
-  readonly allOf: readonly string[];
-  readonly anyOf: readonly string[];
-  readonly items: string | null;
-  readonly oneOf: readonly string[];
-  readonly properties: readonly (SchemaProperty & {
-    readonly functionName: string;
-  })[];
-  readonly reference: string | null;
-};
-
-function indent(lines: readonly string[], spaces = 2): string[] {
-  const prefix = ' '.repeat(spaces);
-  return lines.map((line) => (line.length === 0 ? line : `${prefix}${line}`));
-}
-
-function typeExpression(type: SchemaType, value = 'value'): string {
-  switch (type) {
-    case 'array':
-      return `Array.isArray(${value})`;
-    case 'boolean':
-      return `typeof ${value} === 'boolean'`;
-    case 'integer':
-      return `typeof ${value} === 'number' && Number.isFinite(${value}) && Number.isInteger(${value})`;
-    case 'null':
-      return `${value} === null`;
-    case 'number':
-      return `typeof ${value} === 'number' && Number.isFinite(${value})`;
-    case 'object':
-      return `typeof ${value} === 'object' && ${value} !== null && !Array.isArray(${value})`;
-    case 'string':
-      return `typeof ${value} === 'string'`;
-    default: {
-      const exhaustive: never = type;
-      throw new Error(`Unsupported normalised schema type "${exhaustive}"`);
-    }
-  }
-}
+import { renderArrayConstraints } from './validations/render-arrays.js';
+import { renderNumberConstraints } from './validations/render-numbers.js';
+import { renderObjectConstraints } from './validations/render-objects.js';
+import {
+  renderPrimitiveConstraints,
+  typeExpression,
+} from './validations/render-primitives.js';
+import { renderStringConstraints } from './validations/render-strings.js';
+import {
+  renderAllOf,
+  renderUnionConstraint,
+} from './validations/render-unions.js';
+import type { ChildFunctions } from './validations/types.js';
+import { indent } from './validations/render-utils.js';
 
 class MakerRenderer {
   #counter = 0;
@@ -218,282 +189,17 @@ export function make${name}(input: unknown): Result<${name}> {
       );
     }
 
-    if (schema.constValue !== undefined) {
-      lines.push(
-        `if (!Object.is(value, ${JSON.stringify(schema.constValue)})) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'const', message: 'Expected the documented constant value' });`,
-        ]),
-        '}'
-      );
-    }
-    if (schema.enumValues !== null) {
-      const values = schema.enumValues
-        .map((value) => JSON.stringify(value))
-        .join(', ');
-      lines.push(
-        `if (![${values}].some((candidate) => Object.is(candidate, value))) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'enum', message: 'Expected a documented enum value' });`,
-        ]),
-        '}'
-      );
-    }
-
-    for (const child of children.allOf) {
-      lines.push(`${child}(value, path, errors);`);
-    }
-    this.#renderUnionConstraint(lines, 'anyOf', children.anyOf, false);
-    this.#renderUnionConstraint(lines, 'oneOf', children.oneOf, true);
-
-    this.#renderStringConstraints(lines, schema);
-    this.#renderNumberConstraints(lines, schema);
-    this.#renderArrayConstraints(lines, children.items);
-    this.#renderObjectConstraints(lines, schema, children);
+    renderPrimitiveConstraints(lines, schema.constValue, schema.enumValues);
+    renderAllOf(lines, children.allOf);
+    renderUnionConstraint(lines, 'anyOf', children.anyOf, false);
+    renderUnionConstraint(lines, 'oneOf', children.oneOf, true);
+    renderStringConstraints(lines, schema);
+    renderNumberConstraints(lines, schema);
+    renderArrayConstraints(lines, children.items);
+    renderObjectConstraints(lines, schema, children);
 
     lines.push('return errors.length === errorCount;');
     return lines;
-  }
-
-  #renderUnionConstraint(
-    lines: string[],
-    keyword: 'anyOf' | 'oneOf',
-    branches: readonly string[],
-    isExclusive: boolean
-  ): void {
-    if (branches.length === 0) {
-      return;
-    }
-
-    const variable = `${keyword}Matches`;
-    lines.push(`let ${variable} = 0;`);
-    for (const [index, branch] of branches.entries()) {
-      const errorsName = `${keyword}Errors${index}`;
-      lines.push(
-        `const ${errorsName}: ValidationIssue[] = [];`,
-        `if (${branch}(value, path, ${errorsName})) {`,
-        ...indent([`${variable} += 1;`]),
-        '}'
-      );
-    }
-    const invalidExpression = isExclusive
-      ? `${variable} !== 1`
-      : `${variable} === 0`;
-    const expectation = isExclusive ? 'exactly one' : 'at least one';
-    lines.push(
-      `if (${invalidExpression}) {`,
-      ...indent([
-        `errors.push({ path, keyword: '${keyword}', message: 'Expected ${expectation} matching branch' });`,
-      ]),
-      '}'
-    );
-  }
-
-  #renderStringConstraints(lines: string[], schema: StandardSchema): void {
-    if (
-      schema.format === null &&
-      schema.maxLength === null &&
-      schema.minLength === null &&
-      schema.pattern === null
-    ) {
-      return;
-    }
-
-    lines.push(`if (typeof value === 'string') {`);
-    const checks: string[] = [];
-    if (schema.minLength !== null) {
-      checks.push(
-        `if (Array.from(value).length < ${schema.minLength}) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'minLength', message: 'String is shorter than ${schema.minLength} characters' });`,
-        ]),
-        '}'
-      );
-    }
-    if (schema.maxLength !== null) {
-      checks.push(
-        `if (Array.from(value).length > ${schema.maxLength}) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'maxLength', message: 'String is longer than ${schema.maxLength} characters' });`,
-        ]),
-        '}'
-      );
-    }
-    if (schema.pattern !== null) {
-      checks.push(
-        `if (!new RegExp(${JSON.stringify(schema.pattern)}, 'u').test(value)) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'pattern', message: 'String does not match the documented pattern' });`,
-        ]),
-        '}'
-      );
-    }
-    if (schema.format === 'email') {
-      checks.push(
-        `if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/u.test(value)) {`,
-        ...indent([
-          `errors.push({ path, keyword: 'format', message: 'Expected email format' });`,
-        ]),
-        '}'
-      );
-    }
-    lines.push(...indent(checks), '}');
-  }
-
-  #renderNumberConstraints(lines: string[], schema: StandardSchema): void {
-    if (
-      schema.exclusiveMaximum === null &&
-      schema.exclusiveMinimum === null &&
-      schema.maximum === null &&
-      schema.minimum === null
-    ) {
-      return;
-    }
-
-    lines.push(`if (typeof value === 'number' && Number.isFinite(value)) {`);
-    const checks: string[] = [];
-    const addCheck = (
-      expression: string,
-      keyword: string,
-      message: string
-    ): void => {
-      checks.push(
-        `if (${expression}) {`,
-        ...indent([
-          `errors.push({ path, keyword: '${keyword}', message: ${JSON.stringify(message)} });`,
-        ]),
-        '}'
-      );
-    };
-    if (schema.minimum !== null) {
-      addCheck(
-        `value < ${schema.minimum}`,
-        'minimum',
-        `Number must be at least ${schema.minimum}`
-      );
-    }
-    if (schema.maximum !== null) {
-      addCheck(
-        `value > ${schema.maximum}`,
-        'maximum',
-        `Number must be at most ${schema.maximum}`
-      );
-    }
-    if (schema.exclusiveMinimum !== null) {
-      addCheck(
-        `value <= ${schema.exclusiveMinimum}`,
-        'exclusiveMinimum',
-        `Number must be greater than ${schema.exclusiveMinimum}`
-      );
-    }
-    if (schema.exclusiveMaximum !== null) {
-      addCheck(
-        `value >= ${schema.exclusiveMaximum}`,
-        'exclusiveMaximum',
-        `Number must be less than ${schema.exclusiveMaximum}`
-      );
-    }
-    lines.push(...indent(checks), '}');
-  }
-
-  #renderArrayConstraints(lines: string[], itemValidator: string | null): void {
-    if (itemValidator === null) {
-      return;
-    }
-
-    lines.push(
-      'if (Array.isArray(value)) {',
-      ...indent([
-        'for (let index = 0; index < value.length; index += 1) {',
-        ...indent(['const item = value[index];']),
-        ...indent([`${itemValidator}(item, [...path, index], errors);`]),
-        '}',
-      ]),
-      '}'
-    );
-  }
-
-  #renderObjectConstraints(
-    lines: string[],
-    schema: StandardSchema,
-    children: ChildFunctions
-  ): void {
-    if (
-      children.properties.length === 0 &&
-      children.additionalProperties === null &&
-      schema.additionalProperties !== false
-    ) {
-      return;
-    }
-
-    lines.push(
-      `if (typeof value === 'object' && value !== null && !Array.isArray(value)) {`
-    );
-    const checks: string[] = [];
-    for (const property of children.properties) {
-      const hasProperty = `Object.prototype.hasOwnProperty.call(value, ${JSON.stringify(
-        property.name
-      )})`;
-      const propertyPath = `[...path, ${JSON.stringify(property.name)}]`;
-
-      if (property.required) {
-        checks.push(
-          `if (!${hasProperty}) {`,
-          ...indent([
-            `errors.push({ path: ${propertyPath}, keyword: 'required', message: 'Required property is missing' });`,
-          ]),
-          '} else {',
-          ...indent([
-            `${property.functionName}(Reflect.get(value, ${JSON.stringify(
-              property.name
-            )}), ${propertyPath}, errors);`,
-          ]),
-          '}'
-        );
-      } else {
-        checks.push(
-          `if (${hasProperty}) {`,
-          ...indent([
-            `${property.functionName}(Reflect.get(value, ${JSON.stringify(
-              property.name
-            )}), ${propertyPath}, errors);`,
-          ]),
-          '}'
-        );
-      }
-    }
-
-    if (
-      schema.additionalProperties === false ||
-      children.additionalProperties !== null
-    ) {
-      const propertyNames = children.properties.map(({ name }) => name);
-      checks.push('for (const key of Object.keys(value)) {');
-      const isAdditionalProperty =
-        propertyNames.length === 0
-          ? 'true'
-          : `![${propertyNames
-              .map((name) => JSON.stringify(name))
-              .join(', ')}].includes(key)`;
-      const additionalChecks = [`if (${isAdditionalProperty}) {`];
-      if (schema.additionalProperties === false) {
-        additionalChecks.push(
-          ...indent([
-            `errors.push({ path: [...path, key], keyword: 'additionalProperties', message: 'Unknown property is not allowed' });`,
-          ])
-        );
-      } else if (children.additionalProperties !== null) {
-        additionalChecks.push(
-          ...indent([
-            `${children.additionalProperties}(Reflect.get(value, key), [...path, key], errors);`,
-          ])
-        );
-      }
-      additionalChecks.push('}');
-      checks.push(...indent(additionalChecks), '}');
-    }
-
-    lines.push(...indent(checks), '}');
   }
 }
 

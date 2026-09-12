@@ -327,8 +327,14 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
       join(project.outputPath, 'quickpay-api.ts'),
       'utf8'
     );
+    const widgetInputMaker = await readFile(
+      join(project.outputPath, 'schemas/WidgetInput.ts'),
+      'utf8'
+    );
     assert.match(types, /export type WidgetInput =/);
     assert.match(types, /export type ShapeOfWidgetInput = WidgetInput;/);
+    assert.match(widgetInputMaker, /new RegExp\(/u);
+    assert.doesNotMatch(widgetInputMaker, /\/\^\[A-Za-z0-9/u);
 
     await compileFixtureProject(project.directory);
 
@@ -362,13 +368,36 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
 
     const structuralOnlyInput = {
       ...validInput,
-      email: 'not-an-email',
+      email: 'user@example.com',
       score: -1,
       code: 'x',
     };
     const structuralOnlyResult = makeWidgetInput(structuralOnlyInput);
     assert.equal(structuralOnlyResult.ok, true);
     assert.equal(structuralOnlyResult.value, structuralOnlyInput);
+
+    const invalidEmailInputs = [
+      'not-an-email',
+      'user @example.com',
+      '@example.com',
+      'user@',
+      'user@example',
+      'user..name@example.com',
+      'user@example-.com',
+      'user@example.c',
+    ];
+    for (const email of invalidEmailInputs) {
+      const result = makeWidgetInput({ ...validInput, email });
+      assert.equal(result.ok, false);
+      assert.equal(
+        result.errors.some(
+          ({ keyword, path }: ValidationIssue) =>
+            keyword === 'format' &&
+            JSON.stringify(path) === JSON.stringify(['email'])
+        ),
+        true
+      );
+    }
 
     const invalidInput = structuredClone(validInput);
     invalidInput.email = 123;

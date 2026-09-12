@@ -63,7 +63,7 @@ if (!result.ok) {
 
 Validation errors contain a path, keyword, and message. Successful validation returns the original input without mutating or cloning it.
 
-The focused fixture and acceptance tests cover structural validation: object shape, declared fields, primitive types, arrays, nullability, references, unions, and additional-property behavior. They do not require form-level checks such as email format, string length, patterns, or numeric ranges. Those constraints remain available when declared in consumer schemas.
+The focused fixture and acceptance tests cover structural validation, primitive types, references, unions, additional-property behavior, and declared email format validation. String length, patterns, and numeric ranges remain available when declared in consumer schemas.
 
 ## Supported input
 
