@@ -1,6 +1,6 @@
 {
   "name": "openapi-contract-kit",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Generate type-safe TypeScript contracts and runtime validators from JSON OpenAPI 3.1 documents.",
   "type": "module",
   "packageManager": "pnpm@12.3.4",

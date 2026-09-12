@@ -13,7 +13,7 @@ pnpm install --lockfile-only
 
 For example, `0.0.1` becomes `0.0.2` and the GitHub tag will be `v0.0.2`.
 
-## 2. Generate a changelog draft
+## 2. Generate release notes for the changelog
 
 The release process checks the changes between the previous tag and the new release commit. This command creates a temporary Markdown changelog draft from that exact commit range:
 
@@ -33,9 +33,18 @@ fi
 cat "/tmp/openapi-contract-kit-$VERSION-changelog.md"
 ```
 
-Review and edit the draft, then prepend the final entry to `CHANGELOG.md`. Do not copy commit messages blindly; remove internal or unrelated changes.
+Review and edit the draft into concise, user-facing release notes, then prepend the final entry to `CHANGELOG.md`. Every release must have a matching release-notes entry in the changelog before validation. Do not copy commit messages blindly; remove internal or unrelated changes.
 
-The changelog draft is for the repository’s `CHANGELOG.md`. GitHub Release notes are generated separately from the same tag history in step 5.
+Use this structure for the final entry:
+
+```md
+## [$VERSION] - YYYY-MM-DD
+
+- User-facing change or fix.
+- User-facing change or fix.
+```
+
+The changelog entry is the canonical repository release note. GitHub Release notes are generated separately from the same tag history in step 5 and must be reviewed before publishing.
 
 ## 3. Validate the release
 
