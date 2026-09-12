@@ -1,5 +1,7 @@
 # openapi-contract-kit
 
+[![CI](https://github.com/Clinsmann/openapi-contract-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Clinsmann/openapi-contract-kit/actions/workflows/ci.yml)
+
 JSON-first OpenAPI 3.1 contract generation and runtime validation for TypeScript applications.
 
 `openapi-contract-kit` reads a JSON OpenAPI document and generates:
