@@ -11,4 +11,3 @@ export type Result<T> =
   | { readonly ok: false; readonly errors: readonly ValidationIssue[] };
 
 export type MakeResult<T> = Result<T>;
-

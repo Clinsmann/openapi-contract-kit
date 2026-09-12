@@ -11,20 +11,42 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { generateOpenApiRuntime } from '../src/generator/generateOpenApiRuntime.mjs';
-import { resolveGeneratorConfig } from '../src/generator/config.mjs';
+import {
+  generateOpenApiRuntime,
+  main,
+} from '../src/generator/generateOpenApiRuntime.js';
+import { resolveGeneratorConfig } from '../src/generator/config.js';
 
 const execFileAsync = promisify(execFile);
-const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const projectRoot = process.cwd();
 const fixturePath = join(projectRoot, 'test/fixtures/openapi-runtime.json');
-const runtimeTypesPath = join(projectRoot, 'src/runtime.d.ts');
+const runtimeTypesPath = join(projectRoot, 'dist/src/runtime.d.ts');
 
-async function createFixtureProject() {
+type FixtureProject = {
+  readonly configPath: string;
+  readonly directory: string;
+  readonly outputPath: string;
+  readonly specPath: string;
+};
+
+type FileSnapshot = Array<[string, string]>;
+
+type ValidationIssue = {
+  readonly keyword: string;
+  readonly path: readonly (number | string)[];
+};
+
+type CapturedMainOptions = {
+  readonly argv: readonly string[];
+  readonly isTTY: boolean;
+  readonly stream: NodeJS.WriteStream;
+};
+
+async function createFixtureProject(): Promise<FixtureProject> {
   const directory = await mkdtemp(join(tmpdir(), 'quickpay-openapi-runtime-'));
   const specPath = join(directory, 'openapi.json');
   const outputPath = join(directory, 'src/api/generated');
@@ -37,7 +59,7 @@ async function createFixtureProject() {
   await cp(fixturePath, specPath);
   await mkdir(packageDirectory, { recursive: true });
   await cp(runtimeTypesPath, join(packageDirectory, 'runtime.d.ts'));
-  await writeFile(join(packageDirectory, 'runtime.mjs'), 'export {};\n');
+  await writeFile(join(packageDirectory, 'runtime.js'), 'export {};\n');
   await writeFile(
     join(packageDirectory, 'package.json'),
     `${JSON.stringify(
@@ -47,7 +69,7 @@ async function createFixtureProject() {
         exports: {
           './runtime': {
             types: './runtime.d.ts',
-            import: './runtime.mjs',
+            import: './runtime.js',
           },
         },
       },
@@ -76,16 +98,16 @@ async function createFixtureProject() {
   };
 }
 
-async function snapshotFiles(directory) {
+async function snapshotFiles(directory: string): Promise<FileSnapshot> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
+  const files: FileSnapshot = [];
 
   for (const entry of entries) {
     const filePath = join(directory, entry.name);
     if (entry.isDirectory()) {
-      const nestedFiles = await snapshotFiles(filePath);
+      const nestedFiles: FileSnapshot = await snapshotFiles(filePath);
       files.push(
-        ...nestedFiles.map(([filePath, content]) => [
+        ...nestedFiles.map(([filePath, content]): [string, string] => [
           `${entry.name}/${filePath}`,
           content,
         ])
@@ -98,7 +120,7 @@ async function snapshotFiles(directory) {
   return files.sort(([left], [right]) => left.localeCompare(right));
 }
 
-async function compileFixtureProject(directory) {
+async function compileFixtureProject(directory: string): Promise<void> {
   const consumerPath = join(directory, 'consumer.ts');
   const tsconfigPath = join(directory, 'tsconfig.json');
 
@@ -148,6 +170,47 @@ void invalidResponse;
   await execFileAsync(process.env.TSC_BIN ?? 'tsc', ['--project', tsconfigPath], {
     cwd: projectRoot,
   });
+}
+
+async function captureMainOutput({
+  argv,
+  stream,
+  isTTY,
+}: CapturedMainOptions): Promise<string> {
+  const originalWrite = stream.write;
+  const originalIsTTY = stream.isTTY;
+  const chunks: string[] = [];
+
+  Object.defineProperty(stream, 'isTTY', {
+    configurable: true,
+    value: isTTY,
+  });
+    Object.defineProperty(stream, 'write', {
+      configurable: true,
+      value: (chunk: unknown) => {
+        chunks.push(String(chunk));
+        return true;
+      },
+    });
+
+  try {
+    await main(argv);
+  } finally {
+    Object.defineProperty(stream, 'write', {
+      configurable: true,
+      value: originalWrite,
+    });
+    Object.defineProperty(stream, 'isTTY', {
+      configurable: true,
+      value: originalIsTTY,
+    });
+  }
+
+  return chunks.join('');
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/gu, '');
 }
 
 test('resolves config paths relative to the config file and CLI paths from cwd', async () => {
@@ -204,6 +267,37 @@ test('resolves config paths relative to the config file and CLI paths from cwd',
   }
 });
 
+test('runs the compiled CLI entry point', async () => {
+  const project = await createFixtureProject();
+
+  try {
+    const { stderr, stdout } = await execFileAsync(
+      process.execPath,
+      [
+        join(projectRoot, 'dist/bin/openapi-contract-kit.js'),
+        '--config',
+        project.configPath,
+      ],
+      { cwd: projectRoot }
+    );
+
+    assert.equal(stderr, '');
+    assert.equal(stdout, 'Generated 11 schemas and 2 endpoints.\n');
+    await access(join(project.outputPath, 'quickpay-api.ts'));
+  } finally {
+    await rm(project.directory, { force: true, recursive: true });
+  }
+});
+
+test('exports the compiled package API', async () => {
+  const packageApi = await import('openapi-contract-kit');
+  const runtime = await import('openapi-contract-kit/runtime');
+
+  assert.equal(typeof packageApi.generateOpenApiRuntime, 'function');
+  assert.equal(typeof packageApi.main, 'function');
+  assert.deepEqual(Object.keys(runtime), []);
+});
+
 test('generates deterministic types, standalone makers, and endpoint contracts', async () => {
   const project = await createFixtureProject();
 
@@ -250,7 +344,7 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     const { makeRequest: makePingRequest, makeResponse: makePingResponse } =
       await import(join(compiledRoot, 'endpoints/Ping.js'));
 
-    const validInput = {
+    const validInput: Record<string, unknown> = {
       email: 'user@example.com',
       role: 'admin',
       score: 42,
@@ -284,7 +378,10 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     assert.equal(invalidResult.ok, false);
     assert.deepEqual(invalidInput, beforeValidation);
     assert.deepEqual(
-      invalidResult.errors.map(({ path, keyword }) => ({ path, keyword })),
+      invalidResult.errors.map(({ path, keyword }: ValidationIssue) => ({
+        path,
+        keyword,
+      })),
       [
         { path: ['email'], keyword: 'type' },
         { path: ['settings', 'theme'], keyword: 'type' },
@@ -326,7 +423,7 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
       assert.equal(result.ok, false);
       assert.equal(
         result.errors.some(
-          ({ keyword, path }) =>
+          ({ keyword, path }: ValidationIssue) =>
             keyword === invalidCase.keyword &&
             JSON.stringify(path) === JSON.stringify(invalidCase.path)
         ),
@@ -423,6 +520,73 @@ test('rejects unsupported schemas before changing the last good output', async (
     );
     assert.deepEqual(await snapshotFiles(project.outputPath), beforeFailure);
   } finally {
+    await rm(project.directory, { force: true, recursive: true });
+  }
+});
+
+test('formats interactive CLI output and preserves captured output', async () => {
+  const project = await createFixtureProject();
+  const previousNoColor = process.env.NO_COLOR;
+  const previousExitCode = process.exitCode;
+
+  try {
+    delete process.env.NO_COLOR;
+    const interactiveSuccess = await captureMainOutput({
+      argv: ['--config', project.configPath],
+      isTTY: true,
+      stream: process.stdout,
+    });
+    assert.match(interactiveSuccess, /\u001b\[/u);
+    const plainInteractiveSuccess = stripAnsi(interactiveSuccess);
+    assert.match(plainInteractiveSuccess, /✔ OpenAPI generation complete/u);
+    assert.match(plainInteractiveSuccess, /Schemas:\s+11 schemas/u);
+    assert.match(plainInteractiveSuccess, /Endpoints:\s+2 endpoints/u);
+
+    process.env.NO_COLOR = '1';
+    const uncoloredSuccess = await captureMainOutput({
+      argv: ['--config', project.configPath],
+      isTTY: true,
+      stream: process.stdout,
+    });
+    assert.doesNotMatch(uncoloredSuccess, /\u001b\[/u);
+    assert.match(uncoloredSuccess, /✔ OpenAPI generation complete/u);
+
+    delete process.env.NO_COLOR;
+    const capturedSuccess = await captureMainOutput({
+      argv: ['--config', project.configPath],
+      isTTY: false,
+      stream: process.stdout,
+    });
+    assert.equal(capturedSuccess, 'Generated 11 schemas and 2 endpoints.\n');
+
+    const interactiveFailure = await captureMainOutput({
+      argv: ['--unknown'],
+      isTTY: true,
+      stream: process.stderr,
+    });
+    assert.equal(process.exitCode, 1);
+    assert.match(interactiveFailure, /\u001b\[/u);
+    const plainInteractiveFailure = stripAnsi(interactiveFailure);
+    assert.match(plainInteractiveFailure, /✖ OpenAPI generation failed/u);
+    assert.match(plainInteractiveFailure, /Unknown argument/u);
+
+    process.exitCode = undefined;
+    const capturedFailure = await captureMainOutput({
+      argv: ['--unknown'],
+      isTTY: false,
+      stream: process.stderr,
+    });
+    assert.equal(
+      capturedFailure,
+      'OpenAPI generation failed: Unknown argument "--unknown"\n'
+    );
+  } finally {
+    if (previousNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = previousNoColor;
+    }
+    process.exitCode = previousExitCode;
     await rm(project.directory, { force: true, recursive: true });
   }
 });

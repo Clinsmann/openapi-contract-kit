@@ -3,11 +3,19 @@ import { resolve } from 'node:path';
 import {
   DocumentStore,
   escapePointerSegment,
+  isRecord,
   locationOf,
   pointerChild,
   requireRecord,
-} from './documents.mjs';
-import { SchemaRegistry, toPascalIdentifier } from './schemaModel.mjs';
+} from './documents.js';
+import { SchemaRegistry, toPascalIdentifier } from './schemaModel.js';
+import type {
+  DocumentContext,
+  OpenApiModel,
+  OperationModel,
+  ResponseModel,
+  UnknownRecord,
+} from './types.js';
 
 const HTTP_METHODS = [
   'delete',
@@ -21,21 +29,41 @@ const HTTP_METHODS = [
 ];
 const JSON_MEDIA_TYPE = 'application/json';
 
+type OperationDraft = {
+  readonly method: string;
+  readonly name: string;
+  readonly operation: UnknownRecord;
+  readonly operationId: string;
+  readonly path: string;
+  readonly pathPointer: string;
+};
+
+type UnnamedOperationDraft = Omit<OperationDraft, 'name'>;
+
+type JsonBody = {
+  readonly context: DocumentContext;
+  readonly schema: unknown;
+};
+
+type ResolvedObject = {
+  readonly context: DocumentContext;
+  readonly value: UnknownRecord;
+};
+
 class ModelBuilder {
   #documents = new DocumentStore();
-  #registry;
-  #rootDocument;
-  #rootPath;
+  #registry: SchemaRegistry | null = null;
+  #rootDocument: UnknownRecord | null = null;
+  #rootPath: string | null = null;
 
-  async build(specPath) {
+  async build(specPath: string): Promise<OpenApiModel> {
     this.#rootPath = resolve(specPath);
     this.#rootDocument = await this.#documents.load(this.#rootPath);
     this.#registry = new SchemaRegistry(this.#documents, this.#rootPath);
     this.#validateOpenApiRoot();
     this.#seedComponentSchemas();
     await this.#seedResponseSchemas();
-    const operationDrafts = this.#collectOperationDrafts();
-    const operations = await this.#buildOperations(operationDrafts);
+    const operations = await this.#buildOperations(this.#collectOperationDrafts());
 
     return {
       operations: operations.sort((left, right) =>
@@ -45,38 +73,64 @@ class ModelBuilder {
     };
   }
 
-  #validateOpenApiRoot() {
-    const version = this.#rootDocument.openapi;
+  #getRegistry(): SchemaRegistry {
+    if (this.#registry === null) {
+      throw new Error('OpenAPI model registry is unavailable');
+    }
+    return this.#registry;
+  }
+
+  #getRootDocument(): UnknownRecord {
+    if (this.#rootDocument === null) {
+      throw new Error('OpenAPI root document is unavailable');
+    }
+    return this.#rootDocument;
+  }
+
+  #getRootPath(): string {
+    if (this.#rootPath === null) {
+      throw new Error('OpenAPI root path is unavailable');
+    }
+    return this.#rootPath;
+  }
+
+  #validateOpenApiRoot(): void {
+    const rootDocument = this.#getRootDocument();
+    const rootPath = this.#getRootPath();
+    const version = rootDocument.openapi;
 
     if (typeof version !== 'string' || !version.startsWith('3.1.')) {
       throw new Error(
-        `OpenAPI document "${this.#rootPath}" must use OpenAPI 3.1`
+        `OpenAPI document "${rootPath}" must use OpenAPI 3.1`
       );
     }
     requireRecord(
-      this.#rootDocument.paths,
-      locationOf(this.#rootPath, '/paths'),
+      rootDocument.paths,
+      locationOf(rootPath, '/paths'),
       'OpenAPI paths'
     );
   }
 
-  #seedComponentSchemas() {
-    const schemas = this.#rootDocument.components?.schemas;
+  #seedComponentSchemas(): void {
+    const rootDocument = this.#getRootDocument();
+    const rootPath = this.#getRootPath();
+    const components = rootDocument.components;
+    const schemas = isRecord(components) ? components.schemas : undefined;
 
     if (schemas === undefined) {
       return;
     }
-    requireRecord(
+    const schemaRecord = requireRecord(
       schemas,
-      locationOf(this.#rootPath, '/components/schemas'),
+      locationOf(rootPath, '/components/schemas'),
       'OpenAPI component schemas'
     );
 
-    for (const componentName of Object.keys(schemas).sort()) {
-      this.#registry.register(
-        Reflect.get(schemas, componentName),
+    for (const componentName of Object.keys(schemaRecord).sort()) {
+      this.#getRegistry().register(
+        Reflect.get(schemaRecord, componentName),
         {
-          documentPath: this.#rootPath,
+          documentPath: rootPath,
           pointer: `/components/schemas/${escapePointerSegment(componentName)}`,
         },
         componentName
@@ -84,25 +138,28 @@ class ModelBuilder {
     }
   }
 
-  async #seedResponseSchemas() {
-    const responses = this.#rootDocument.components?.responses;
+  async #seedResponseSchemas(): Promise<void> {
+    const rootDocument = this.#getRootDocument();
+    const rootPath = this.#getRootPath();
+    const components = rootDocument.components;
+    const responses = isRecord(components) ? components.responses : undefined;
 
     if (responses === undefined) {
       return;
     }
-    requireRecord(
+    const responseRecord = requireRecord(
       responses,
-      locationOf(this.#rootPath, '/components/responses'),
+      locationOf(rootPath, '/components/responses'),
       'OpenAPI component responses'
     );
 
-    for (const responseName of Object.keys(responses).sort()) {
+    for (const responseName of Object.keys(responseRecord).sort()) {
       const context = {
-        documentPath: this.#rootPath,
+        documentPath: rootPath,
         pointer: `/components/responses/${escapePointerSegment(responseName)}`,
       };
       const resolved = await this.#resolveReferenceObject(
-        Reflect.get(responses, responseName),
+        Reflect.get(responseRecord, responseName),
         context,
         'Response'
       );
@@ -113,20 +170,27 @@ class ModelBuilder {
       );
 
       if (body !== null) {
-        this.#registry.register(body.schema, body.context, responseName);
+        this.#getRegistry().register(body.schema, body.context, responseName);
       }
     }
   }
 
-  #collectOperationDrafts() {
-    const drafts = [];
-    const operationIds = new Set();
+  #collectOperationDrafts(): readonly OperationDraft[] {
+    const rootDocument = this.#getRootDocument();
+    const rootPath = this.#getRootPath();
+    const paths = requireRecord(
+      rootDocument.paths,
+      locationOf(rootPath, '/paths'),
+      'OpenAPI paths'
+    );
+    const drafts: UnnamedOperationDraft[] = [];
+    const operationIds = new Set<string>();
 
-    for (const path of Object.keys(this.#rootDocument.paths).sort()) {
+    for (const path of Object.keys(paths).sort()) {
       const pathPointer = `/paths/${escapePointerSegment(path)}`;
       const pathItem = requireRecord(
-        Reflect.get(this.#rootDocument.paths, path),
-        locationOf(this.#rootPath, pathPointer),
+        Reflect.get(paths, path),
+        locationOf(rootPath, pathPointer),
         'Path item'
       );
 
@@ -141,12 +205,13 @@ class ModelBuilder {
       }
 
       for (const method of HTTP_METHODS) {
-        if (pathItem[method] === undefined) {
+        const rawOperation = pathItem[method];
+        if (rawOperation === undefined) {
           continue;
         }
         const operation = requireRecord(
-          pathItem[method],
-          locationOf(this.#rootPath, `${pathPointer}/${method}`),
+          rawOperation,
+          locationOf(rootPath, `${pathPointer}/${method}`),
           'Operation'
         );
         const operationId = operation.operationId;
@@ -173,46 +238,56 @@ class ModelBuilder {
       }
     }
 
-    const leafCounts = new Map();
-    for (const draft of drafts) {
+    const draftsWithLeaves = drafts.map((draft) => {
       const segments = draft.operationId
         .split(/[^A-Za-z0-9_$]+/u)
         .filter(Boolean);
-      const leaf = toPascalIdentifier(
-        segments.at(-1) ?? draft.operationId,
-        'Operation'
-      );
-      draft.leafName = leaf;
-      leafCounts.set(
-        leaf.toLowerCase(),
-        (leafCounts.get(leaf.toLowerCase()) ?? 0) + 1
-      );
+      return {
+        ...draft,
+        leafName: toPascalIdentifier(
+          segments.at(-1) ?? draft.operationId,
+          'Operation'
+        ),
+      };
+    });
+    const leafCounts = new Map<string, number>();
+    for (const draft of draftsWithLeaves) {
+      const key = draft.leafName.toLowerCase();
+      leafCounts.set(key, (leafCounts.get(key) ?? 0) + 1);
     }
 
-    const names = new Set();
-    for (const draft of drafts) {
-      draft.name =
+    const names = new Set<string>();
+    return draftsWithLeaves.map((draft) => {
+      const name =
         leafCounts.get(draft.leafName.toLowerCase()) === 1
           ? draft.leafName
           : toPascalIdentifier(draft.operationId, 'Operation');
-      const key = draft.name.toLowerCase();
+      const key = name.toLowerCase();
       if (names.has(key)) {
-        throw new Error(`Operation name collision for "${draft.name}"`);
+        throw new Error(`Operation name collision for "${name}"`);
       }
       names.add(key);
-    }
-
-    return drafts;
+      return {
+        method: draft.method,
+        name,
+        operation: draft.operation,
+        operationId: draft.operationId,
+        path: draft.path,
+        pathPointer: draft.pathPointer,
+      };
+    });
   }
 
-  async #buildOperations(drafts) {
-    const operations = [];
+  async #buildOperations(
+    drafts: readonly OperationDraft[]
+  ): Promise<OperationModel[]> {
+    const operations: OperationModel[] = [];
+    const rootPath = this.#getRootPath();
 
     for (const draft of drafts) {
-      const operationPointer = `${draft.pathPointer}/${draft.method}`;
       const context = {
-        documentPath: this.#rootPath,
-        pointer: operationPointer,
+        documentPath: rootPath,
+        pointer: `${draft.pathPointer}/${draft.method}`,
       };
       operations.push({
         method: draft.method.toUpperCase(),
@@ -231,7 +306,11 @@ class ModelBuilder {
     return operations;
   }
 
-  async #buildRequest(operation, context, operationName) {
+  async #buildRequest(
+    operation: UnknownRecord,
+    context: DocumentContext,
+    operationName: string
+  ): Promise<OperationModel['request']> {
     if (operation.requestBody === undefined) {
       return { schemaName: null };
     }
@@ -261,7 +340,7 @@ class ModelBuilder {
     }
 
     return {
-      schemaName: await this.#registry.schemaNameFor(
+      schemaName: await this.#getRegistry().schemaNameFor(
         body.schema,
         body.context,
         `${operationName}Request`
@@ -269,14 +348,18 @@ class ModelBuilder {
     };
   }
 
-  async #buildResponses(operation, context, operationName) {
+  async #buildResponses(
+    operation: UnknownRecord,
+    context: DocumentContext,
+    operationName: string
+  ): Promise<readonly ResponseModel[]> {
     const responsesPointer = pointerChild(context.pointer, 'responses');
     const responses = requireRecord(
       operation.responses,
       locationOf(context.documentPath, responsesPointer),
       'Operation responses'
     );
-    const result = [];
+    const result: ResponseModel[] = [];
 
     for (const statusKey of Object.keys(responses).sort(
       (left, right) => Number(left) - Number(right)
@@ -309,7 +392,7 @@ class ModelBuilder {
       const schemaName =
         body === null
           ? null
-          : await this.#registry.schemaNameFor(
+          : await this.#getRegistry().schemaNameFor(
               body.schema,
               body.context,
               `${operationName}Response${statusKey}`
@@ -329,7 +412,11 @@ class ModelBuilder {
     return result;
   }
 
-  #readJsonBody(value, context, label) {
+  #readJsonBody(
+    value: UnknownRecord,
+    context: DocumentContext,
+    label: string
+  ): JsonBody | null {
     if (value.content === undefined) {
       return null;
     }
@@ -380,7 +467,12 @@ class ModelBuilder {
     };
   }
 
-  async #resolveReferenceObject(value, context, label, seen = new Set()) {
+  async #resolveReferenceObject(
+    value: unknown,
+    context: DocumentContext,
+    label: string,
+    seen = new Set<string>()
+  ): Promise<ResolvedObject> {
     const object = requireRecord(
       value,
       locationOf(context.documentPath, context.pointer),
@@ -409,7 +501,6 @@ class ModelBuilder {
   }
 }
 
-export async function buildOpenApiModel(specPath) {
+export async function buildOpenApiModel(specPath: string): Promise<OpenApiModel> {
   return new ModelBuilder().build(specPath);
 }
-

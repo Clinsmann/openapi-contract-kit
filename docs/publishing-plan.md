@@ -13,7 +13,7 @@
 - Commit and push the repository to its default branch.
 - Run `pnpm install` and commit the generated `pnpm-lock.yaml`; the workflows use `pnpm install --frozen-lockfile`.
 - Run `pnpm test` and `pnpm run pack:check`.
-- Inspect the tarball for secrets and application-specific generated output. The package should contain only the allowlisted `bin`, `src`, `CHANGELOG.md`, `LICENSE`, and `README.md` content.
+- Inspect the tarball for secrets and application-specific generated output. The package should contain only the allowlisted compiled `dist/bin`, `dist/src`, `CHANGELOG.md`, `LICENSE`, and `README.md` content.
 
 ## First publish: `0.0.1`
 

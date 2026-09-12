@@ -2,7 +2,7 @@
 
 Planned project work, in implementation order:
 
-- [x] Migrate the build and package entry points to Rspack.
+- [ ] Migrate the build and package entry points to Rspack.
 - [x] Migrate package management from npm to pnpm; commit the pnpm lockfile and update contributor commands.
 - [ ] Replace `.mjs` source and CLI files with TypeScript equivalents, preserving the public exports and generated output.
 - [ ] Add basic linting and formatting with package scripts and CI coverage.
@@ -461,3 +461,16 @@ Questions suggestions to architecture:
 
 
  ['quickpay-api.ts', emitRootTypes(model)], why do we have this, quickpay is another project? what is going on?
+
+
+  The important architectural choice is that both static types and runtime validators are generated from
+  the same model. This prevents the type generator and validator generator from independently interpreting
+  the OpenAPI document. : how about we have a normalisation layer, that produces a normalised version of the spec, then we can use it to generate both types and validators independently
+
+  can you also add brief comments in each section, explaining what each one do in the entire scheme of things.
+
+  We also want the final API name to be configuratble and required: not 'quickpay-api.ts'
+
+  also instead of using schemas/endpoints, lets do it a folder per endpoint, and put all the resources for that endpoint in one folder.
+
+  

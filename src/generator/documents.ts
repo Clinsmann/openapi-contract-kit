@@ -1,23 +1,32 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 
-export function isRecord(value) {
+import type {
+  ResolvedReference,
+  UnknownRecord,
+} from './types.js';
+
+export function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function escapePointerSegment(segment) {
+export function escapePointerSegment(segment: string): string {
   return segment.replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
-export function pointerChild(pointer, segment) {
+export function pointerChild(pointer: string, segment: string | number): string {
   return `${pointer}/${escapePointerSegment(String(segment))}`;
 }
 
-export function locationOf(documentPath, pointer) {
+export function locationOf(documentPath: string, pointer: string): string {
   return `${documentPath}#${pointer}`;
 }
 
-export function requireRecord(value, location, label) {
+export function requireRecord(
+  value: unknown,
+  location: string,
+  label: string
+): UnknownRecord {
   if (!isRecord(value)) {
     throw new Error(`${label} at ${location} must be an object`);
   }
@@ -26,9 +35,9 @@ export function requireRecord(value, location, label) {
 }
 
 export class DocumentStore {
-  #documents = new Map();
+  #documents = new Map<string, Promise<UnknownRecord>>();
 
-  async load(documentPath) {
+  async load(documentPath: string): Promise<UnknownRecord> {
     const absolutePath = resolve(documentPath);
     const existing = this.#documents.get(absolutePath);
 
@@ -41,8 +50,8 @@ export class DocumentStore {
     return pending;
   }
 
-  async #read(documentPath) {
-    let source;
+  async #read(documentPath: string): Promise<UnknownRecord> {
+    let source: string;
 
     try {
       source = await readFile(documentPath, 'utf8');
@@ -58,8 +67,11 @@ export class DocumentStore {
       if (extension !== '.json') {
         throw new Error('Only JSON OpenAPI documents are supported');
       }
-      const value = JSON.parse(source);
-      return requireRecord(value, documentPath, 'OpenAPI document');
+      return requireRecord(
+        JSON.parse(source),
+        documentPath,
+        'OpenAPI document'
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -68,7 +80,10 @@ export class DocumentStore {
     }
   }
 
-  async resolveReference(reference, fromDocumentPath) {
+  async resolveReference(
+    reference: unknown,
+    fromDocumentPath: string
+  ): Promise<ResolvedReference> {
     if (typeof reference !== 'string' || reference.length === 0) {
       throw new Error(`Invalid $ref at ${fromDocumentPath}`);
     }
@@ -91,7 +106,7 @@ export class DocumentStore {
       throw new Error(`Anchor $ref "${reference}" is unsupported`);
     }
 
-    let value = document;
+    let value: unknown = document;
     for (const encodedSegment of decodedFragment.split('/').slice(1)) {
       const segment = encodedSegment
         .replaceAll('~1', '/')

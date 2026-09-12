@@ -4,9 +4,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { buildOpenApiModel } from '../src/generator/model.mjs';
+import { buildOpenApiModel } from '../src/generator/model.js';
 
-function createSpec() {
+type OperationFixture = Record<string, unknown>;
+
+type OpenApiFixture = {
+  readonly components: {
+    schemas: Record<string, unknown>;
+  };
+  readonly info: Record<string, string>;
+  readonly openapi: string;
+  readonly paths: {
+    '/test': {
+      post: OperationFixture;
+    };
+    [path: string]: Record<string, OperationFixture>;
+  };
+};
+
+function createSpec(): OpenApiFixture {
   return {
     openapi: '3.1.0',
     info: { title: 'Model test', version: '1.0.0' },
@@ -28,7 +44,9 @@ function createSpec() {
   };
 }
 
-async function withDirectory(callback) {
+async function withDirectory<T>(
+  callback: (directory: string) => Promise<T>
+): Promise<T> {
   const directory = await mkdtemp(join(tmpdir(), 'openapi-model-'));
 
   try {
@@ -38,7 +56,7 @@ async function withDirectory(callback) {
   }
 }
 
-async function expectModelFailure(spec, expected) {
+async function expectModelFailure(spec: unknown, expected: RegExp): Promise<void> {
   await withDirectory(async (directory) => {
     const specPath = join(directory, 'openapi.json');
     await writeFile(specPath, `${JSON.stringify(spec, null, 2)}\n`);
@@ -104,7 +122,10 @@ test('loads JSON and resolves a local external schema by canonical name', async 
       model.schemas.map(({ name }) => name),
       ['SharedExternalInput']
     );
-    assert.equal(model.operations[0].request.schemaName, 'SharedExternalInput');
+    assert.equal(
+      model.operations.at(0)?.request.schemaName,
+      'SharedExternalInput'
+    );
   });
 });
 

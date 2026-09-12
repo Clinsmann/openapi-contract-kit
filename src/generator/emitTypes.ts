@@ -1,17 +1,21 @@
-function renderLiteral(value) {
+import type {
+  NormalizedSchema,
+  OpenApiModel,
+  SchemaType,
+  StandardSchema,
+} from './types.js';
+
+function renderLiteral(value: boolean | null | number | string): string {
   return JSON.stringify(value);
 }
 
-function parenthesise(type) {
+function parenthesise(type: string): string {
   return type.includes(' | ') || type.includes(' & ') ? `(${type})` : type;
 }
 
-function renderObjectType(schema) {
+function renderObjectType(schema: StandardSchema): string {
   if (schema.properties.length === 0) {
-    if (
-      schema.additionalProperties !== true &&
-      schema.additionalProperties !== false
-    ) {
+    if (typeof schema.additionalProperties !== 'boolean') {
       return `Record<string, ${renderSchemaType(schema.additionalProperties)}>`;
     }
     return 'Record<string, unknown>';
@@ -24,7 +28,7 @@ function renderObjectType(schema) {
   return `{\n${properties.join('\n')}\n}`;
 }
 
-function renderBasicType(type, schema) {
+function renderBasicType(type: SchemaType, schema: StandardSchema): string {
   switch (type) {
     case 'array': {
       const itemType =
@@ -42,20 +46,19 @@ function renderBasicType(type, schema) {
       return renderObjectType(schema);
     case 'string':
       return 'string';
-    default:
-      throw new Error(`Unsupported normalised schema type "${type}"`);
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unsupported normalised schema type "${exhaustive}"`);
+    }
   }
 }
 
-export function renderSchemaType(schema) {
-  if (schema.booleanSchema === false) {
-    return 'never';
-  }
-  if (schema.booleanSchema === true) {
-    return 'unknown';
+export function renderSchemaType(schema: NormalizedSchema): string {
+  if (schema.booleanSchema !== null) {
+    return schema.booleanSchema ? 'unknown' : 'never';
   }
 
-  const intersections = [];
+  const intersections: string[] = [];
 
   if (schema.reference !== null) {
     intersections.push(schema.reference);
@@ -88,7 +91,7 @@ export function renderSchemaType(schema) {
   return meaningful.map(parenthesise).join(' & ');
 }
 
-export function emitRootTypes(model) {
+export function emitRootTypes(model: OpenApiModel): string {
   const declarations = model.schemas.flatMap(({ name, schema }) => [
     `export type ${name} = ${renderSchemaType(schema)};`,
     `export type ShapeOf${name} = ${name};`,

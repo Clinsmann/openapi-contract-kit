@@ -1,28 +1,38 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 
+import type {
+  GenerateOpenApiRuntimeOptions,
+  GeneratorConfig,
+  UnknownRecord,
+} from './types.js';
+
 const CONFIG_KEYS = new Set(['specPath', 'outDir', 'runtimeImport']);
-const FLAG_NAMES = new Map([
+type CliConfigKey = 'configPath' | 'outDir' | 'runtimeImport' | 'specPath';
+
+const FLAG_NAMES = new Map<string, CliConfigKey>([
   ['--config', 'configPath'],
   ['--spec', 'specPath'],
   ['--out', 'outDir'],
   ['--runtime-import', 'runtimeImport'],
 ]);
 
-function isRecord(value) {
+type CliOptions = Partial<Record<CliConfigKey, string>>;
+
+export function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parseArguments(argv, cwd) {
-  const values = {};
+function parseArguments(argv: readonly string[], cwd: string): CliOptions {
+  const values: CliOptions = {};
 
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
-    const key = FLAG_NAMES.get(flag);
+    const key = flag === undefined ? undefined : FLAG_NAMES.get(flag);
     const value = argv[index + 1];
 
     if (key === undefined) {
-      throw new Error(`Unknown argument "${flag}"`);
+      throw new Error(`Unknown argument "${flag ?? ''}"`);
     }
     if (typeof value !== 'string' || value.length === 0) {
       throw new Error(`Missing value for "${flag}"`);
@@ -34,7 +44,7 @@ function parseArguments(argv, cwd) {
   return values;
 }
 
-function requirePath(config, key, configPath) {
+function requirePath(config: UnknownRecord, key: string, configPath: string): string {
   const value = config[key];
 
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -44,13 +54,14 @@ function requirePath(config, key, configPath) {
   return value;
 }
 
-export async function resolveGeneratorConfig({
-  argv = [],
-  cwd = process.cwd(),
-} = {}) {
+export async function resolveGeneratorConfig(
+  options: GenerateOpenApiRuntimeOptions = {}
+): Promise<GeneratorConfig> {
+  const argv = options.argv ?? [];
+  const cwd = options.cwd ?? process.cwd();
   const cli = parseArguments(argv, cwd);
   const configPath = cli.configPath ?? resolve(cwd, 'openapi.config.json');
-  let config;
+  let config: unknown;
 
   try {
     config = JSON.parse(await readFile(configPath, 'utf8'));
@@ -72,7 +83,7 @@ export async function resolveGeneratorConfig({
   }
 
   const configDirectory = dirname(configPath);
-  const resolveConfigPath = (key) => {
+  const resolveConfigPath = (key: 'outDir' | 'specPath'): string => {
     const value = requirePath(config, key, configPath);
     return isAbsolute(value) ? value : resolve(configDirectory, value);
   };

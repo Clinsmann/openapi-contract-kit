@@ -1,11 +1,30 @@
-import { join } from 'node:path';
+import type {
+  GeneratorConfig,
+  NormalizedSchema,
+  OpenApiModel,
+  SchemaProperty,
+  SchemaType,
+  StandardSchema,
+} from './types.js';
 
-function indent(lines, spaces = 2) {
+type ChildFunctions = {
+  readonly additionalProperties: string | null;
+  readonly allOf: readonly string[];
+  readonly anyOf: readonly string[];
+  readonly items: string | null;
+  readonly oneOf: readonly string[];
+  readonly properties: readonly (SchemaProperty & {
+    readonly functionName: string;
+  })[];
+  readonly reference: string | null;
+};
+
+function indent(lines: readonly string[], spaces = 2): string[] {
   const prefix = ' '.repeat(spaces);
   return lines.map((line) => (line.length === 0 ? line : `${prefix}${line}`));
 }
 
-function typeExpression(type, value = 'value') {
+function typeExpression(type: SchemaType, value = 'value'): string {
   switch (type) {
     case 'array':
       return `Array.isArray(${value})`;
@@ -21,24 +40,26 @@ function typeExpression(type, value = 'value') {
       return `typeof ${value} === 'object' && ${value} !== null && !Array.isArray(${value})`;
     case 'string':
       return `typeof ${value} === 'string'`;
-    default:
-      throw new Error(`Unsupported normalised schema type "${type}"`);
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unsupported normalised schema type "${exhaustive}"`);
+    }
   }
 }
 
 class MakerRenderer {
   #counter = 0;
-  #functions = [];
-  #nodeNames = new WeakMap();
-  #nodeSignatures = new Map();
-  #referencedSchemas = new Set();
-  #schemaNames;
+  #functions: string[] = [];
+  #nodeNames = new WeakMap<NormalizedSchema, string>();
+  #nodeSignatures = new Map<string, string>();
+  #referencedSchemas = new Set<string>();
+  #schemaNames: Set<string>;
 
-  constructor(model) {
+  constructor(model: OpenApiModel) {
     this.#schemaNames = new Set(model.schemas.map(({ name }) => name));
   }
 
-  render(name, schema, runtimeImport) {
+  render(name: string, schema: NormalizedSchema, runtimeImport: string): string {
     const rootValidator = this.#emitNode(schema);
     const makerImports = [...this.#referencedSchemas]
       .sort()
@@ -76,12 +97,12 @@ export function make${name}(input: unknown): Result<${name}> {
 `;
   }
 
-  #emitNode(schema) {
+  #emitNode(schema: NormalizedSchema): string {
     const existing = this.#nodeNames.get(schema);
     if (existing !== undefined) {
       return existing;
     }
-    const signature = JSON.stringify(schema, (key, value) =>
+    const signature = JSON.stringify(schema, (key, value: unknown) =>
       key === 'location' ? undefined : value
     );
     const matchingNode = this.#nodeSignatures.get(signature);
@@ -95,29 +116,7 @@ export function make${name}(input: unknown): Result<${name}> {
     this.#nodeNames.set(schema, functionName);
     this.#nodeSignatures.set(signature, functionName);
 
-    const childFunctions = {
-      additionalProperties:
-        schema.additionalProperties !== true &&
-        schema.additionalProperties !== false &&
-        schema.additionalProperties !== undefined
-          ? this.#emitNode(schema.additionalProperties)
-          : null,
-      allOf: (schema.allOf ?? []).map((child) => this.#emitNode(child)),
-      anyOf: (schema.anyOf ?? []).map((child) => this.#emitNode(child)),
-      items:
-        schema.items !== null && schema.items !== undefined
-          ? this.#emitNode(schema.items)
-          : null,
-      oneOf: (schema.oneOf ?? []).map((child) => this.#emitNode(child)),
-      properties: (schema.properties ?? []).map((property) => ({
-        ...property,
-        functionName: this.#emitNode(property.schema),
-      })),
-      reference:
-        schema.reference !== null && schema.reference !== undefined
-          ? this.#registerReference(schema.reference)
-          : null,
-    };
+    const childFunctions = this.#createChildFunctions(schema);
     const body = this.#renderNodeBody(schema, childFunctions);
     this.#functions.push(
       `function ${functionName}(\n  value: unknown,\n  path: ValidationPath,\n  errors: ValidationIssue[]\n): boolean {\n${indent(body).join('\n')}\n}`
@@ -125,7 +124,40 @@ export function make${name}(input: unknown): Result<${name}> {
     return functionName;
   }
 
-  #registerReference(reference) {
+  #createChildFunctions(schema: NormalizedSchema): ChildFunctions {
+    if (schema.booleanSchema !== null) {
+      return {
+        additionalProperties: null,
+        allOf: [],
+        anyOf: [],
+        items: null,
+        oneOf: [],
+        properties: [],
+        reference: null,
+      };
+    }
+
+    return {
+      additionalProperties:
+        typeof schema.additionalProperties === 'boolean'
+          ? null
+          : this.#emitNode(schema.additionalProperties),
+      allOf: schema.allOf.map((child) => this.#emitNode(child)),
+      anyOf: schema.anyOf.map((child) => this.#emitNode(child)),
+      items: schema.items === null ? null : this.#emitNode(schema.items),
+      oneOf: schema.oneOf.map((child) => this.#emitNode(child)),
+      properties: schema.properties.map((property) => ({
+        ...property,
+        functionName: this.#emitNode(property.schema),
+      })),
+      reference:
+        schema.reference === null
+          ? null
+          : this.#registerReference(schema.reference),
+    };
+  }
+
+  #registerReference(reference: string): string {
     if (!this.#schemaNames.has(reference)) {
       throw new Error(`Unknown schema model reference "${reference}"`);
     }
@@ -133,18 +165,21 @@ export function make${name}(input: unknown): Result<${name}> {
     return reference;
   }
 
-  #renderNodeBody(schema, children) {
+  #renderNodeBody(
+    schema: NormalizedSchema,
+    children: ChildFunctions
+  ): string[] {
     const lines = ['const errorCount = errors.length;'];
 
-    if (schema.booleanSchema === false) {
-      lines.push(
-        `errors.push({ path, keyword: 'falseSchema', message: 'Value is not allowed' });`,
-        'return false;'
-      );
-      return lines;
-    }
-    if (schema.booleanSchema === true) {
-      lines.push('return true;');
+    if (schema.booleanSchema !== null) {
+      if (schema.booleanSchema) {
+        lines.push('return true;');
+      } else {
+        lines.push(
+          `errors.push({ path, keyword: 'falseSchema', message: 'Value is not allowed' });`,
+          'return false;'
+        );
+      }
       return lines;
     }
 
@@ -216,7 +251,12 @@ export function make${name}(input: unknown): Result<${name}> {
     return lines;
   }
 
-  #renderUnionConstraint(lines, keyword, branches, isExclusive) {
+  #renderUnionConstraint(
+    lines: string[],
+    keyword: 'anyOf' | 'oneOf',
+    branches: readonly string[],
+    isExclusive: boolean
+  ): void {
     if (branches.length === 0) {
       return;
     }
@@ -245,7 +285,7 @@ export function make${name}(input: unknown): Result<${name}> {
     );
   }
 
-  #renderStringConstraints(lines, schema) {
+  #renderStringConstraints(lines: string[], schema: StandardSchema): void {
     if (
       schema.format === null &&
       schema.maxLength === null &&
@@ -256,7 +296,7 @@ export function make${name}(input: unknown): Result<${name}> {
     }
 
     lines.push(`if (typeof value === 'string') {`);
-    const checks = [];
+    const checks: string[] = [];
     if (schema.minLength !== null) {
       checks.push(
         `if (Array.from(value).length < ${schema.minLength}) {`,
@@ -296,7 +336,7 @@ export function make${name}(input: unknown): Result<${name}> {
     lines.push(...indent(checks), '}');
   }
 
-  #renderNumberConstraints(lines, schema) {
+  #renderNumberConstraints(lines: string[], schema: StandardSchema): void {
     if (
       schema.exclusiveMaximum === null &&
       schema.exclusiveMinimum === null &&
@@ -307,8 +347,8 @@ export function make${name}(input: unknown): Result<${name}> {
     }
 
     lines.push(`if (typeof value === 'number' && Number.isFinite(value)) {`);
-    const checks = [];
-    const addCheck = (expression, keyword, message) => {
+    const checks: string[] = [];
+    const addCheck = (expression: string, keyword: string, message: string): void => {
       checks.push(
         `if (${expression}) {`,
         ...indent([
@@ -348,7 +388,10 @@ export function make${name}(input: unknown): Result<${name}> {
     lines.push(...indent(checks), '}');
   }
 
-  #renderArrayConstraints(lines, itemValidator) {
+  #renderArrayConstraints(
+    lines: string[],
+    itemValidator: string | null
+  ): void {
     if (itemValidator === null) {
       return;
     }
@@ -365,7 +408,11 @@ export function make${name}(input: unknown): Result<${name}> {
     );
   }
 
-  #renderObjectConstraints(lines, schema, children) {
+  #renderObjectConstraints(
+    lines: string[],
+    schema: StandardSchema,
+    children: ChildFunctions
+  ): void {
     if (
       children.properties.length === 0 &&
       children.additionalProperties === null &&
@@ -377,7 +424,7 @@ export function make${name}(input: unknown): Result<${name}> {
     lines.push(
       `if (typeof value === 'object' && value !== null && !Array.isArray(value)) {`
     );
-    const checks = [];
+    const checks: string[] = [];
     for (const property of children.properties) {
       const hasProperty = `Object.prototype.hasOwnProperty.call(value, ${JSON.stringify(
         property.name
@@ -430,7 +477,7 @@ export function make${name}(input: unknown): Result<${name}> {
             `errors.push({ path: [...path, key], keyword: 'additionalProperties', message: 'Unknown property is not allowed' });`,
           ])
         );
-      } else {
+      } else if (children.additionalProperties !== null) {
         additionalChecks.push(
           ...indent([
             `${children.additionalProperties}(Reflect.get(value, key), [...path, key], errors);`,
@@ -445,14 +492,17 @@ export function make${name}(input: unknown): Result<${name}> {
   }
 }
 
-export function emitSchemaMakers(model, { outDir, runtimeImport }) {
-  const files = new Map();
+export function emitSchemaMakers(
+  model: OpenApiModel,
+  config: GeneratorConfig
+): Map<string, string> {
+  const files = new Map<string, string>();
 
   for (const { name, schema } of model.schemas) {
     const renderer = new MakerRenderer(model);
     files.set(
       `schemas/${name}.ts`,
-      renderer.render(name, schema, runtimeImport)
+      renderer.render(name, schema, config.runtimeImport)
     );
   }
 

@@ -21,7 +21,23 @@ const MANIFEST_FILE = '.openapi-runtime-manifest.json';
 const LEGACY_GENERATED_FILE =
   /^(?:quickpay-api\.ts|(?:endpoints|schemas)\/[^/]+\.ts)$/u;
 
-async function exists(path) {
+type OutputOptions = {
+  readonly protectedPaths?: readonly string[];
+};
+
+type OutputManifest = {
+  readonly files: readonly string[];
+};
+
+function isManifest(value: unknown): value is OutputManifest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const files = Reflect.get(value, 'files');
+  return Array.isArray(files) && files.every((file) => typeof file === 'string');
+}
+
+async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
@@ -30,9 +46,9 @@ async function exists(path) {
   }
 }
 
-async function listFiles(directory, prefix = '') {
+async function listFiles(directory: string, prefix = ''): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
+  const files: string[] = [];
 
   for (const entry of entries.sort((left, right) =>
     left.name.localeCompare(right.name)
@@ -51,7 +67,7 @@ async function listFiles(directory, prefix = '') {
   return files;
 }
 
-function validateGeneratedPath(path) {
+function validateGeneratedPath(path: string): void {
   if (
     path.length === 0 ||
     isAbsolute(path) ||
@@ -61,7 +77,7 @@ function validateGeneratedPath(path) {
   }
 }
 
-function isAncestor(parent, child) {
+function isAncestor(parent: string, child: string): boolean {
   const pathFromParent = relative(parent, child);
   return (
     pathFromParent.length === 0 ||
@@ -69,7 +85,10 @@ function isAncestor(parent, child) {
   );
 }
 
-function validateOutputRoot(outDir, protectedPaths) {
+function validateOutputRoot(
+  outDir: string,
+  protectedPaths: readonly string[]
+): void {
   if (parse(outDir).root === outDir) {
     throw new Error(`Unsafe OpenAPI output directory "${outDir}"`);
   }
@@ -83,7 +102,7 @@ function validateOutputRoot(outDir, protectedPaths) {
   }
 }
 
-async function validateExistingOutput(outDir) {
+async function validateExistingOutput(outDir: string): Promise<boolean> {
   if (!(await exists(outDir))) {
     return false;
   }
@@ -105,18 +124,13 @@ async function validateExistingOutput(outDir) {
     return true;
   }
 
-  let manifest;
+  let manifest: unknown;
   try {
     manifest = JSON.parse(await readFile(join(outDir, MANIFEST_FILE), 'utf8'));
   } catch {
     throw new Error(`OpenAPI output manifest is invalid at ${outDir}`);
   }
-  if (
-    typeof manifest !== 'object' ||
-    manifest === null ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.some((file) => typeof file !== 'string')
-  ) {
+  if (!isManifest(manifest)) {
     throw new Error(`OpenAPI output manifest is invalid at ${outDir}`);
   }
 
@@ -131,7 +145,10 @@ async function validateExistingOutput(outDir) {
   return true;
 }
 
-async function writeStage(stagePath, files) {
+async function writeStage(
+  stagePath: string,
+  files: ReadonlyMap<string, string>
+): Promise<void> {
   await mkdir(stagePath, { recursive: true });
 
   for (const [relativePath, content] of files) {
@@ -152,10 +169,11 @@ async function writeStage(stagePath, files) {
 }
 
 export async function writeGeneratedOutput(
-  outDir,
-  files,
-  { protectedPaths = [] } = {}
-) {
+  outDir: string,
+  files: ReadonlyMap<string, string>,
+  options: OutputOptions = {}
+): Promise<void> {
+  const protectedPaths = options.protectedPaths ?? [];
   validateOutputRoot(outDir, protectedPaths);
   const hadExistingOutput = await validateExistingOutput(outDir);
   const parent = dirname(outDir);
@@ -193,4 +211,3 @@ export async function writeGeneratedOutput(
     await rm(swapRoot, { force: true, recursive: true });
   }
 }
-

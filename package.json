@@ -8,34 +8,37 @@
   "engines": {
     "node": ">=26"
   },
-  "main": "./src/index.mjs",
-  "types": "./src/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "bin": {
-    "openapi-contract-kit": "./bin/openapi-contract-kit.mjs"
+    "openapi-contract-kit": "./dist/bin/openapi-contract-kit.js"
   },
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "import": "./src/index.mjs"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     },
     "./runtime": {
-      "types": "./src/runtime.d.ts",
-      "import": "./src/runtime.mjs"
+      "types": "./dist/src/runtime.d.ts",
+      "import": "./dist/src/runtime.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "bin",
-    "src",
+    "dist/bin",
+    "dist/src",
     "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs",
-    "pack:check": "pnpm pack --dry-run"
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "pnpm run build && node --test dist/test/*.test.js",
+    "pack:check": "pnpm run build && pnpm pack --dry-run"
   },
   "devDependencies": {
+    "@types/node": "^26.5.1",
     "typescript": "^5.9.3"
   },
   "repository": {

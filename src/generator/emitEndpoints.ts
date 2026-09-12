@@ -1,6 +1,10 @@
-import { join } from 'node:path';
+import type {
+  GeneratorConfig,
+  OpenApiModel,
+  ResponseModel,
+} from './types.js';
 
-function renderResponseType(responses) {
+function renderResponseType(responses: readonly ResponseModel[]): string {
   if (responses.length === 0) {
     return 'never';
   }
@@ -13,8 +17,8 @@ function renderResponseType(responses) {
     .join(' | ');
 }
 
-function renderStatusCases(responses) {
-  const lines = [];
+function renderStatusCases(responses: readonly ResponseModel[]): string {
+  const lines: string[] = [];
 
   for (const response of responses) {
     lines.push(`    case ${response.status}: {`);
@@ -44,14 +48,17 @@ function renderStatusCases(responses) {
   return lines.join('\n');
 }
 
-function emitEndpoint(operation, { outDir, runtimeImport }) {
+function emitEndpoint(
+  operation: OpenApiModel['operations'][number],
+  config: GeneratorConfig
+): string {
   const successResponses = operation.responses.filter(
     (response) => response.isSuccess
   );
   const errorResponses = operation.responses.filter(
     (response) => !response.isSuccess
   );
-  const schemaNames = new Set();
+  const schemaNames = new Set<string>();
 
   if (operation.request.schemaName !== null) {
     schemaNames.add(operation.request.schemaName);
@@ -87,7 +94,7 @@ function emitEndpoint(operation, { outDir, runtimeImport }) {
  * Do not edit directly.
  */
 
-import type { Result, ValidationPath } from ${JSON.stringify(runtimeImport)};
+import type { Result, ValidationPath } from ${JSON.stringify(config.runtimeImport)};
 ${typeImport}${makerImports}${makerImports.length > 0 ? '\n' : ''}
 export const URL = ${JSON.stringify(operation.path)};
 export const METHOD = ${JSON.stringify(operation.method)};
@@ -172,7 +179,10 @@ export const makeResponse = Object.assign(makeAnyResponse, {
 `;
 }
 
-export function emitEndpointModules(model, config) {
+export function emitEndpointModules(
+  model: OpenApiModel,
+  config: GeneratorConfig
+): Map<string, string> {
   return new Map(
     model.operations.map((operation) => [
       `endpoints/${operation.name}.ts`,

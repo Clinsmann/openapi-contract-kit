@@ -79,6 +79,7 @@ The generator supports JSON OpenAPI 3.1 documents with objects, primitive types,
 
 ```bash
 pnpm install
+pnpm run typecheck
 pnpm test
 pnpm run pack:check
 ```
