@@ -1,1069 +1,179 @@
-# OpenAPI Contract Kit — Roadmap / TODO
+# OpenAPI Contract Kit — Roadmap & Notes
 
-## 1. Current State
+## 1. Roadmap
 
-The package currently owns:
+- [x] Move package management from npm to pnpm; commit the lockfile; update contributor commands.
+- [ ] Replace `.mjs` source and CLI files with TypeScript, keeping the same public exports and generated output.
+- [x] Add linting and formatting, with package scripts and CI.
+- [ ] Accept `.yml` and `.yaml` specs, with clear parse errors and tests.
+- [x] Update the supported Node engine and CI matrix to Node 24+.
+- [ ] Add deterministic dry-run generation, covering every supported scenario, without writing files.
+- [ ] Rewrite the README as a short library guide: install, configure, generate, validate, generated-code examples.
+- [ ] Add repo status metadata to the README (stars, package size, etc.), with a reproducible update process.
+- [ ] Add the published npm package link to the README.
+- [ ] Type validated maker results with their validated shape, e.g. `makeAuthenticatedUser` returns `Result<ShapeOfAuthenticatedUser>`.
+- [ ] Support for path-item reference
 
-- OpenAPI loading and normalization
-- reference resolution
-- the shared resolved model / IR
-- TypeScript type generation
-- runtime validator generation
-- endpoint generation
-- output handling
-- runtime result/error types
-- package-level tests
+**Definition of done**
+- [ ] Tests cover JSON, YAML, and YAML parse failures.
+- [ ] Dry runs cover all supported schema and endpoint scenarios, and are deterministic.
+- [ ] Lint, format, typecheck, tests, and packaging pass on Node 24+ with pnpm.
+- [ ] README examples run against the published package.
 
-The generated application code does **not** ship a schema parser/compiler such as Ajv.
+## 2. Current Limitations
 
-Current validation already supports primitives, objects, arrays, `$ref`, `allOf`, `oneOf`, `anyOf`, `additionalProperties`, numeric bounds, string lengths, patterns, and email format.
+Full desired validation scope was reconfirmed: all primitive types, required/optional/nullable properties, nested objects, arrays, enums, `oneOf`, `allOf`, discriminators, `$ref`, `additionalProperties`, min/max numbers, min/max string length, patterns, email format, documented request/response bodies with status codes, bodyless bodies as `null`, plus YAML input. All of this is already supported, except YAML input and optional request bodies (tracked below).
 
----
+The generator currently excludes:
+- YAML input
+- Remote `$ref`
+- Anchor `$ref`
+- Path and operation parameters
+- Optional request bodies
+- Non-JSON media types
+- Default or wildcard response statuses
+- Unsupported schema assertion keywords
+- Recursive schema references
 
-## 2. Priority 1 — Correctness and API Contract Support
+Static vs runtime gap:
+- Only the runtime validator enforces exact `oneOf` semantics; TypeScript unions can't do this.
+- Only the runtime validator enforces numeric ranges, regexes, and email format.
+- Typed `additionalProperties` is fully checked at runtime. The generated type shows it as an index signature only when there are no other declared properties.
 
-These should come before cosmetic improvements.
+## 3. Feature Requests
 
-### YAML input support
+**Output & configuration**
+- Make the output API file name configurable and required, instead of hardcoding `quickpay-api.ts`.
+- Change the layout to one folder per endpoint, holding all resources for that endpoint, instead of separate `schemas/` and `endpoints/` folders.
+- Log the generated endpoint names to the console at the end of a successful run.
+- Add a utility to build/validate a URL from `Endpoint.URL` and a params object, e.g. `myUtilityName(Endpoint.URL, { id, companyId })`, with a clear error when a param is missing or extra.
 
-Add support for:
+**Validation & schema support**
+- Support optional request bodies.
+- Add `date` and `date-time` string formats, alongside the existing `email` format.
 
-```text
-.json
-.yml
-.yaml
-```
+**Errors**
+- Make error messages more descriptive, and suggest possible fixes.
 
-Prefer detecting the parser from the file extension.
+**Docs & testing**
+- Add a short description or comment for each section, tool, or piece of generated logic, explaining its role in the system, with examples where useful.
+- Add a usage example for `makeResponse(input)`, `makeResponse.success(input)`, `makeResponse.error(input)`, e.g. paired with a `fetch` call.
+- Generate code docs (e.g. JSDoc) for the generated logic, dynamically.
+- Add a README example for an endpoint path with multiple methods, e.g. `GET /catalogs/:id`, `PUT /catalogs/:id`, `DELETE /catalogs/:id` — show what `METHOD` and the types resolve to.
+- Add a test and an explaining comment for the multi-method case above.
+- Add a test confirming a validator returns the exact same object reference for valid input, instead of a clone.
 
-Possible flow:
+## 4. Naming Change Proposal (`make` → `validate`)
 
-```text
-file
- ↓
-loadDocument()
- ↓
-JSON parser OR YAML parser
- ↓
-normalized OpenAPI document
- ↓
-same compiler pipeline
-```
+| Current | New | Why |
+|---|---|---|
+| `ShapeOfRequest` | `Request` | Endpoint module already gives the context |
+| `ShapeOfSuccessResponse` | `SuccessResponse` | Easier to read |
+| `ShapeOfErrorResponse` | `ErrorResponse` | Short and clear |
+| `ShapeOfResponse` | `Response` | Endpoint module already gives the context |
+| `makeRequest` | `validateRequest` | It validates, it doesn't construct anything |
+| `makeResponse.success` | `validateResponse.success` | States exactly what happens |
+| `makeResponse.error` | `validateResponse.error` | Same reason |
+| `ValidationError` | `ValidationIssue` | "Issue" fits a single validation problem |
+| `openapiRuntime.ts` | `validation.ts` | File holds shared validation primitives |
+| `generateOpenApiRuntime.mjs` | `generateOpenApi.mjs` | "Runtime" makes the generator sound like runtime code |
 
-Add clear YAML parse errors and tests.
-
-### Optional request bodies
-
-Currently optional request bodies are intentionally unsupported.
-
-Add support for:
-
-```yaml
-requestBody:
-  required: false
-```
-
-Decide exactly how absence is represented:
-
+Suggested usage:
 ```ts
-undefined
+import * as Login from "./generated/endpoints/login";
+
+Login.URL;
+Login.METHOD;
+Login.validateRequest(input);
+Login.validateResponse.success(status, body);
+Login.validateResponse.error(status, body);
+
+// types
+Login.Request;
+Login.SuccessResponse;
+Login.ErrorResponse;
+Login.Response;
 ```
 
-versus:
-
-```ts
-null
-```
-
-This needs to be a deliberate public API decision.
-
-### Path parameters
-
-Add support for operation path parameters:
-
-```text
-GET /companies/{companyId}/catalogs/{id}
-```
-
-Generate their type:
-
-```ts
-type PathParams = {
-  companyId: string;
-  id: string;
-};
-```
-
-And validate them.
-
-### URL builder
-
-Add a generated or shared utility such as:
-
-```ts
-buildUrl(Endpoint.URL, {
-  companyId: "123",
-  id: "456",
-});
-```
-
-Result:
-
-```text
-/companies/123/catalogs/456
-```
-
-It should reject missing and unknown parameters.
-
-### Multiple HTTP methods on the same path
-
-Explicitly support and test:
-
-```text
-GET    /api/v1/catalogs/{id}
-PUT    /api/v1/catalogs/{id}
-DELETE /api/v1/catalogs/{id}
-```
-
-Each operation should remain its own generated endpoint contract.
-
-For example:
-
-```text
-GetCatalog
-UpdateCatalog
-DeleteCatalog
-```
-
-Each gets its own `METHOD`, request/response types, and validators.
-
----
-
-## 3. Priority 2 — Validation Coverage
-
-The package should validate everything that can be determined from:
-
-```text
-OpenAPI schema + input value
-```
-
-without requiring application state.
-
-### Structural validation
-
-Support and test:
-
-```text
-object
-array
-string
-number
-integer
-boolean
-null
-required properties
-optional properties
-nullable values
-nested objects
-arrays/items
-enum
-const
-$ref
-allOf
-oneOf
-anyOf
-additionalProperties
-```
-
-### Constraint validation
-
-Support and test:
-
-```text
-minimum
-maximum
-minLength
-maxLength
-pattern
-format: email
-format: date
-format: date-time
-```
-
-### Do not cross into business validation
-
-Do not validate things such as:
-
-```text
-Does this user exist?
-Is this email already registered?
-Does this person have permission?
-Is there enough account balance?
-```
-
-Those belong to application code.
-
----
-
-## 4. Priority 3 — Generated API Improvements
-
-### Rename `make` to `validate`
-
-Current:
-
-```ts
-makeUser(value)
-makeRequest(value)
-makeResponse(value)
-```
-
-Proposed:
-
-```ts
-validateUser(value)
-validateRequest(value)
-validateResponse(value)
-```
-
-Reason: the function validates; it does not construct, clone, transform, coerce, or mutate.
-
-For compatibility, consider:
-
-```ts
-export const makeRequest = validateRequest;
-```
-
-during a migration period.
-
-### Simplify generated type names
-
-Consider changing:
-
-```ts
-ShapeOfRequest
-ShapeOfSuccessResponse
-ShapeOfErrorResponse
-ShapeOfResponse
-```
-
-to:
-
-```ts
-Request
-SuccessResponse
-ErrorResponse
-Response
-```
-
-Namespace-style usage becomes:
-
-```ts
-Login.Request
-Login.Response
-Login.validateRequest(data);
-```
-
-Retain aliases temporarily if backward compatibility matters.
-
-### Correct result typing
-
-A successful validator should return the actual validated type.
-
-Example:
-
-```ts
-validateAuthenticatedUser(value)
-```
-
-should return:
-
-```ts
-Result<ShapeOfAuthenticatedUser>
-```
-
----
-
-## 5. Priority 4 — Generated File Layout
-
-This needs an architectural decision.
-
-Current:
-
-```text
-generated/
-  schemas/
-  endpoints/
-```
-
-Possible endpoint-oriented structure:
-
-```text
-generated/
-  endpoints/
-    login/
-      index.ts
-    signup/
-      index.ts
-    getLoggedInUser/
-      index.ts
-
-  schemas/
-    user.ts
-    apiError.ts
-```
-
-This keeps endpoint organization while preserving shared schema deduplication.
-
-Do not duplicate shared schemas into every endpoint folder.
-
----
-
-## 6. Priority 5 — Configuration
-
-### Required generated API name
-
-Remove project-specific names like:
-
-```text
-quickpay-api.ts
-```
-
-from generic generator behavior.
-
-Possible config:
-
-```json
-{
-  "input": "./openapi.json",
-  "output": "./src/api/generated",
-  "name": "quickpay"
+Main idea: the library validates input, instead of transforming, constructing, coercing, or mutating it. `validateRequest()` describes that better than `makeRequest()`.
+
+## 5. Open Questions
+
+- Should we add an explicit normalization layer, so the normalized model can feed the type emitter and the validator emitter independently, instead of both reading raw OpenAPI directly?
+- Should the normalizer pick JSON vs YAML from config, or from the file extension?
+- What is `['quickpay-api.ts', emitRootTypes(model)]` for in the code — is QuickPay a separate project? Please clarify why this name is there.
+- Should error states use classes, or plain types? Should they live in one dedicated file?
+- Please explain, in our context: pointer, reference, anchor reference, remote reference, and JSON Pointer rules (e.g. `~1` → `/`, `~0` → `~`).
+- Please explain why `model.ts` rejects path-item references, path-level parameters, and operation-level parameters.
+- When one path supports multiple HTTP methods (e.g. `GET`, `PUT`, `DELETE` on `/catalogs/:id`), what does `METHOD` resolve to, and what types get generated for each method?
+
+## 6. Design Guidelines (Reference)
+
+Background principles from earlier brainstorming, kept for reference. Main rule: build-time complexity is cheap, runtime complexity is expensive.
+
+**Architecture & maintainability**
+1. Add a clear intermediate model: OpenAPI → normalized model → generated code.
+2. Keep the runtime small — no Ajv, Zod, or the OpenAPI parser in shipped app code.
+3. Generate one file per endpoint, for tree shaking and easier inspection.
+4. Give descriptive errors: what failed, which operation, which location, which file.
+5. Add a `check` command for CI, that fails when generated files are out of date.
+6. Support dry runs, so developers see changes before writing files.
+7. Publish a clear support matrix: what's supported (`oneOf`, `allOf`, discriminator, pattern, ...) and what's not (XML, callbacks, ...).
+8. Keep generation deterministic: the same input always produces the same files.
+9. Create extension points, so new outputs (MSW, test data, ...) don't need a new parser.
+10. Test against small fixtures and real-world OpenAPI documents.
+
+**Developer experience**
+1. Keep the main API simple, e.g. `generate({ input, output })`.
+2. Ship good defaults, so it works with little config.
+3. Give useful errors: what failed, where, and what to do about it.
+4. Give good TypeScript types, so autocomplete guides the developer.
+5. Keep behavior predictable: same input, same result.
+6. Keep docs short, with an install → generate → import → validate flow; put advanced topics separately.
+7. Make upgrades easy; document any breaking change clearly.
+8. Keep generated code readable and easy to debug.
+9. Keep commands fast, so generation feels cheap to run often.
+10. Add escape hatches (custom naming, custom resolver), without forcing one setup on every project.
+
+**Bundle size**
+1. Keep the generator itself a devDependency only.
+2. Make generated validators plain functions, instead of classes or runtime factories.
+3. Compile checks into plain TS/JS, instead of shipping Zod, Ajv, or Valibot at runtime.
+4. Generate one module per endpoint or schema, so tree shaking removes unused contracts.
+5. Use ESM and mark the package `"sideEffects": false`.
+6. Keep shared validation helpers (`isString`, `isObject`) very small.
+7. Keep TypeScript-only info (types, descriptions, examples) out of runtime constants.
+8. Strip OpenAPI metadata after generation, keeping the original schema out of the runtime output.
+9. Keep runtime error objects small, e.g. `{ path, code }`; add human-readable messages in dev tooling only.
+10. Reuse shared validators (e.g. one `validateUser()`), instead of inlining the same check in every endpoint file.
+
+Optional: support a debug mode (richer errors, larger output) and a production mode (compact codes, smaller output).
+
+
+
+
+the idea is that when you make a call, the caller handle error throwing
+
+so eg: 
+
+
+try {
+   // but the main approach and the default approach we should push is eg.
+  const validatedAuthorisedUser = makeLoginResponse(dataHere, "Custom error message will go here incase of error")
+
+// here is where our tool is mostly useful
+  
+  //we want to be able to do this
+  if (!validatedAuthorisedUser.ok) {
+    console.error(validatedAuthorisedUser.errors);
+    // throw the error here if you want
+  }
+
+  return validatedAuthorisedUser.value
+
+ 
+
+  // then when the above throws the catch will catch it and do with the validation error what they will.
+}(catch) {
+  // error is handled here, whatever happens here is none of our business
 }
-```
-
-or:
-
-```json
-{
-  "apiName": "quickpay"
-}
-```
-
-Only require a name if it actually affects public generated identifiers.
-
-### Input format
-
-Prefer deriving parser choice from extension:
-
-```text
-.json → JSON
-.yaml → YAML
-.yml  → YAML
-```
-
-Avoid a separate `format` option unless a real use case needs it.
-
----
-
-## 7. Priority 6 — Error Experience
-
-Improve generator errors.
-
-Bad:
-
-```text
-Unsupported schema
-```
-
-Better:
-
-```text
-Unsupported OpenAPI schema keyword: not
-
-Operation:
-  createUser
-
-Location:
-  paths./users.post.requestBody
-  .content.application/json.schema
-
-Schema:
-  #/components/schemas/CreateUser
-
-Suggestion:
-  `not` is currently unsupported.
-  Rewrite the schema using oneOf/anyOf if possible,
-  or open a feature request.
-```
-
-### Generator errors
-
-Examples:
-
-```text
-UnsupportedSchemaError
-ReferenceResolutionError
-InvalidOperationError
-InvalidConfigurationError
-UnsafeOutputDirectoryError
-```
-
-### Runtime validation issues
-
-Example:
-
-```ts
-{
-  path: ["user", "email"],
-  keyword: "format",
-  message: "Expected a valid email address"
-}
-```
-
-### Question: classes or plain objects for errors?
-
-Recommendation:
-
-- Use classes for generator exceptions.
-- Use plain `ValidationIssue` objects for expected runtime validation failures.
-
-Example:
-
-```ts
-class UnsupportedSchemaError extends Error {}
-class ReferenceResolutionError extends Error {}
-```
-
-and:
-
-```ts
-type ValidationIssue = {
-  path: readonly (string | number)[];
-  keyword: string;
-  message: string;
-};
-```
-
----
-
-## 8. Priority 7 — CLI / Developer Experience
-
-### Dry run
-
-Add:
-
-```bash
-openapi-contract-kit generate --dry-run
-```
-
-It should:
-
-- perform the full generation
-- write nothing
-- still surface failures
-- optionally report which files would change
-
-### Check command
-
-Add:
-
-```bash
-openapi-contract-kit check
-```
-
-Useful for CI.
-
-Possible output:
-
-```text
-Generated contracts are up to date.
-```
-
-or:
-
-```text
-Generated contracts are stale.
-
-Changed:
-  endpoints/Login.ts
-
-Added:
-  schemas/User.ts
-
-Removed:
-  schemas/OldUser.ts
-```
-
-### Generation summary
-
-After successful generation:
-
-```text
-✓ Generated OpenAPI contracts
-
-8 operations
-14 schemas
-21 validators
-
-Endpoints:
-  POST   /v1/login          → Login
-  POST   /v1/signup         → Signup
-  GET    /v1/me             → GetLoggedInUser
-
-Output:
-  src/api/generated
-```
-
-Consider:
-
-```bash
---quiet
-```
-
-for CI.
-
----
-
-## 9. Priority 8 — Source Code Cleanup
-
-### Convert `.mjs` implementation to TypeScript
-
-Suggested structure:
-
-```text
-src/
-  config.ts
-  loader.ts
-  resolver.ts
-  normalize.ts
-  model.ts
-
-  emit/
-    types.ts
-    validators.ts
-    endpoints.ts
-
-  errors/
-    errors.ts
-
-  cli.ts
-```
-
-Compile these for the npm package.
-
----
-
-## 10. Priority 9 — Documentation
-
-The README should follow a predictable flow:
-
-1. What is it?
-2. Install
-3. Configure
-4. Generate
-5. Validate a request
-6. Validate a response
-7. Fetch example
-8. Supported OpenAPI features
-9. Unsupported features
-10. Generated output
-11. Errors and troubleshooting
-12. Architecture
-
-Example install:
-
-```bash
-pnpm add -D openapi-contract-kit
-```
-
-Example config:
-
-```json
-{
-  "input": "./openapi.yaml",
-  "output": "./src/api/generated"
-}
-```
-
-Example request validation:
-
-```ts
-const result = Login.validateRequest(input);
-```
-
-Example response validation:
-
-```ts
-const result = Login.validateResponse({
-  status: response.status,
-  body: await response.json(),
-});
-```
-
-Example fetch usage:
-
-```ts
-const request = Login.validateRequest({
-  email,
-  password,
-});
-
-if (!request.ok) {
-  return request;
-}
-
-const response = await fetch(Login.URL, {
-  method: Login.METHOD,
-  headers: {
-    "content-type": "application/json",
-  },
-  body: JSON.stringify(request.value),
-});
-
-const body = await response.json();
-
-const validated = Login.validateResponse({
-  status: response.status,
-  body,
-});
-```
-
-Architecture section:
-
-```text
-OpenAPI
-  ↓
-loader
-  ↓
-resolver
-  ↓
-normalizer / IR
-  ↓
-types + validators + endpoints
-```
-
-Each section should explain what it does and why it exists.
-
----
-
-## 11. Priority 10 — Tests
-
-### Input tests
-
-```text
-JSON
-YAML
-invalid JSON
-invalid YAML
-unsupported OpenAPI version
-```
-
-### Reference tests
-
-```text
-local pointer
-local-file pointer
-unresolved pointer
-remote ref
-anchor ref
-cyclic ref
-```
-
-### Schema tests
-
-```text
-primitive
-object
-array
-nullable
-enum
-const
-allOf
-anyOf
-oneOf
-additionalProperties
-number bounds
-string length
-pattern
-email
-date
-date-time
-```
-
-### Operation tests
-
-```text
-GET
-POST
-PUT
-PATCH
-DELETE
-same path + multiple methods
-required request body
-optional request body
-bodyless request
-success responses
-error responses
-bodyless responses
-undocumented status
-```
-
-### Runtime behavior tests
-
-Add an explicit identity-preservation test:
-
-```ts
-const input = {
-  email: "me@example.com"
-};
-
-const result = validateUser(input);
-
-assert(result.ok);
-assert.strictEqual(result.value, input);
-```
-
-This proves the same object reference is returned after successful validation.
-
-### Determinism tests
-
-```text
-same input twice
-→ byte-for-byte identical output
-```
-
-### Dry-run tests
-
-```text
-dry run
-→ same calculation
-→ zero filesystem modification
-```
-
-### Stale-file tests
-
-Removing an operation/schema should remove its generated output safely.
-
----
-
-## 12. Bundle Size / Generated Code Size
-
-Keep these as explicit non-functional goals:
-
-- generator remains a dev dependency
-- no Ajv/Zod/etc. runtime
-- ESM output
-- side-effect-free modules
-- one validator per unique normalized schema
-- reuse validators instead of duplicating them
-- do not emit OpenAPI descriptions/examples into runtime unless needed
-- do not ship the OpenAPI document
-- keep validation result objects small
-- tree-shakable endpoint entrypoints
-
-Shared validator deduplication is already implemented and should remain under **Completed**, not TODO.
-
----
-
-## 13. Architecture Decisions / Questions
-
-### Q1. Should JSON/YAML selection come from configuration or file extension?
-
-Recommendation:
-
-```text
-extension by default
-```
-
-Add an override only if a real use case appears.
-
-### Q2. Should there be a normalization layer before types and validators?
-
-Yes.
-
-The shared normalized model / IR should be the one source of truth for both type generation and validator generation.
-
-This question can probably move to **Resolved Decisions**.
-
-### Q3. Why does anything say `quickpay-api.ts`?
-
-It should not be hardcoded inside the generic package.
-
-Determine whether this is:
-
-- stale consumer code
-- generated filename configuration
-- actual package coupling
-
-If it is package coupling, remove it.
-
-### Q4. Should API/output name be required?
-
-Decision needed.
-
-Possible config:
-
-```json
-{
-  "name": "quickpay"
-}
-```
-
-Only require it if it affects public generated identifiers.
-
-### Q5. Should generated output be organized by schema/endpoint or endpoint folders?
-
-Decision needed.
-
-Recommended hybrid:
-
-```text
-schemas/
-  shared reusable validators
-
-endpoints/
-  login/
-  signup/
-```
-
-Do not duplicate schemas per endpoint.
-
-### Q6. Should generator errors use classes?
-
-Recommendation:
-
-```text
-Yes for generator exceptions.
-No for ValidationIssue values.
-```
-
-### Q7. What are pointer/ref/anchor/remote references?
-
-Documentation topic.
-
-Examples:
-
-```text
-#/components/schemas/User
-```
-
-A `$ref` means: use another schema here.
-
-The part:
-
-```text
-/components/schemas/User
-```
-
-is a JSON Pointer, meaning a path inside a JSON document.
-
-External local file:
-
-```text
-./shared.json#/components/schemas/User
-```
-
-means: load `shared.json`, then follow that pointer.
-
-Remote ref:
-
-```text
-https://example.com/schema.json#/User
-```
-
-loads another document over the network.
-
-Anchor ref:
-
-```text
-#User
-```
-
-refers to a named JSON Schema anchor rather than a JSON Pointer.
-
-Pointer escaping:
-
-```text
-~1 → /
-~0 → ~
-```
-
-### Q8. What are path-item references and path-level parameters?
-
-Needs a documentation explanation and then a decision about whether to support them.
-
-### Q9. What happens when several operation IDs have the same final name?
-
-Current intended behavior:
-
-```text
-users.create → UsersCreate
-admin.create → AdminCreate
-```
-
-Document and test it.
-
-### Q10. What should happen when one path supports multiple HTTP methods?
-
-Each HTTP method is a separate OpenAPI operation and therefore a separate generated endpoint contract.
-
-Add tests and a README example.
-
----
-
-## 14. Explanations / Documentation Requests
-
-These are documentation backlog items rather than engineering TODOs:
-
-- Explain IR / normalized model.
-- Explain `$ref`.
-- Explain JSON Pointer.
-- Explain remote references.
-- Explain anchors.
-- Explain pointer escaping.
-- Explain path-level parameters.
-- Explain operation-level parameters.
-- Explain endpoint naming collision rules.
-- Explain exact `oneOf` runtime semantics.
-- Explain runtime validation versus TypeScript validation.
-- Explain why numeric ranges/email/regex cannot be represented fully by TypeScript.
-- Explain `additionalProperties`.
-- Explain why input identity is preserved.
-- Explain `makeResponse`, `.success`, `.error`.
-- Add a `fetch()` usage example.
-- Add generated-code comments/JSDoc where useful.
-
----
-
-## 15. Later / Nice-to-Have
-
-Keep these below the core work:
-
-- plugin/emitter architecture
-- MSW generator
-- test-data generator
-- Fast Check integration
-- debug vs production validator output
-- custom naming hooks
-- custom resolver hooks
-- remote `$ref`
-- anchor `$ref`
-- recursive schemas
-- non-JSON media types
-- wildcard/default response statuses
-- richer package/repository metrics in README
-
-Repository stars/package-size badges are low priority compared with API correctness and docs.
-
----
-
-## 16. Explicitly Out of Scope for Now
-
-Keep an explicit section so the project does not expand endlessly:
-
-```text
-HTTP client generation
-fetch wrapper generation
-Axios adapters
-server routers
-mock server
-React hooks
-UI
-Storybook
-business-rule validation
-database validation
-authorization logic
-```
-
-The package should remain focused on generated contracts and runtime validation, not application infrastructure.
-
----
-
-## 17. Suggested Implementation Order
-
-1. Fix `Result<Shape>` typing.
-2. YAML support.
-3. Better generator errors.
-4. Convert generator source from `.mjs` to TypeScript.
-5. Dry-run.
-6. `check` command.
-7. Path parameter model + URL builder.
-8. Optional request bodies.
-9. `date` / `date-time`.
-10. Multiple-method/same-path tests.
-11. Naming cleanup (`make` → `validate`) with compatibility aliases.
-12. README rewrite and architecture/reference docs.
-13. Revisit generated directory structure.
-14. Optimize bundle/generated size based on actual measurements.
-
----
-
-## 18. Cleanup Notes
-
-Remove stale brainstorming duplicates from the planning document once each item has been moved into one of the sections above.
-
-Avoid repeating items that are already implemented, such as:
-
-- deterministic generation
-- small runtime
-- shared schema validators
-- shared normalized model / IR
-- validator deduplication
-- no runtime schema compiler
-- preserved input identity
-
-Keep one canonical place for each decision or TODO.
-
----
-
-## 19. Completed / Already in Place
-
-These should stay visible so future planning does not accidentally re-add them as TODOs:
-
-- Generator extracted into standalone package.
-- Runtime contracts moved into the package.
-- Package metadata, CLI exports, and npm packaging checks added.
-- Consumer updated to use the package runtime and CLI.
-- Focused package CI and release workflows added.
-- Shared validator deduplication implemented.
-- One validator generated per unique normalized schema node.
-- Named schema makers remain stable wrappers/public entrypoints.
-- No runtime schema parser/compiler is shipped.
-- Generation is deterministic.
-- Output handling is stale-safe.
-- Input is not coerced, defaulted, stripped, mutated, or cloned.
-- Status/body correlation is part of endpoint response validation.
-
----
-
-## 20. Main Principles
-
-```text
-Build-time complexity is cheap.
-Runtime complexity is expensive.
-```
-
-```text
-OpenAPI
-  ↓
-smart compiler
-  ↓
-small, readable, tree-shakable generated code
-```
-
-```text
-One normalized model
-  ↓
-types
-validators
-endpoints
-```
-
-```text
-Schema validation belongs in the library.
-Business validation belongs in the application.
-```
-
-```text
-If the generator is unsure or unsupported:
-fail closed.
-```
