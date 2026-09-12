@@ -1,10 +1,9 @@
 # Changelog
 
-## Unreleased
+
+## [0.0.5] - 2026-09-12
 
 - Tighten generated pragmatic email-format validation and modularize primitive and constraint renderers.
-
-All notable changes to this project will be documented in this file.
 
 ## [0.0.4] - 2026-09-12
 
