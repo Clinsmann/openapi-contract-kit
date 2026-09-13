@@ -1,5 +1,11 @@
 # Changelog
 
+- Require a configurable `typesFile` value for generated root schema types and add the `--types-file` CLI override.
+
+<!-- unpublished -->
+
+- Accept `.json`, `.yml`, and `.yaml` OpenAPI documents using extension-based parsing.
+
 
 ## [0.0.5] - 2026-09-12
 
