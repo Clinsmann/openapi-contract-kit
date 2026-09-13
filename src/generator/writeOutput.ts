@@ -118,8 +118,7 @@ async function validateExistingOutput(
   if (!existingFiles.includes(MANIFEST_FILE)) {
     const unexpected = existingFiles.find(
       (file) =>
-        file !== generatedRootFile &&
-        !/^(?:endpoints|schemas)\/[^/]+\.ts$/u.test(file)
+        file !== generatedRootFile && !/^(?:api|validators)\.ts$/u.test(file)
     );
     if (unexpected !== undefined) {
       throw new Error(

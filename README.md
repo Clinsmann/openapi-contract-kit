@@ -2,21 +2,17 @@
 
 ![CI](https://github.com/Clinsmann/openapi-contract-kit/actions/workflows/ci.yml/badge.svg)
 
-Generate TypeScript types and runtime validators from an OpenAPI 3.1 document.
-The generated code validates data; your HTTP client still performs the request
-and your application decides how validation failures are handled.
+Generate TypeScript types and runtime validators from OpenAPI 3.1 documents.
+The generated code validates data; your HTTP client owns transport and error
+handling.
 
-## Install
+## Install and generate
 
 ```bash
 pnpm add -D openapi-contract-kit
 ```
 
-Requires Node.js 24 or newer.
-
-## Configure and generate
-
-Create `openapi.config.json` next to your OpenAPI document:
+Create `openapi.config.json`:
 
 ```json
 {
@@ -27,68 +23,102 @@ Create `openapi.config.json` next to your OpenAPI document:
 }
 ```
 
-Add a script and generate:
-
-```json
-{
-  "scripts": {
-    "openapi:generate": "openapi-contract-kit"
-  }
-}
-```
-
 ```bash
-pnpm run openapi:generate
+openapi-contract-kit
 ```
 
-The CLI also accepts `--config`, `--spec`, `--out`, `--runtime-import`, and
-`--types-file`. Paths from the config file are resolved relative to that file.
-
-Generation produces a root types file, one maker per schema, shared validators,
-and one endpoint module per OpenAPI operation:
+Generation produces one public runtime module, one type module, and shared
+validators:
 
 ```text
 src/api/generated/
 ├── contracts.ts
-├── schemas/
-│   ├── WidgetInput.ts
-│   └── validators.ts
-└── endpoints/
-    └── CreateWidget.ts
+├── api.ts
+├── validators.ts
+└── .openapi-runtime-manifest.json
 ```
 
+## Generated API
 
-
-## Validate generated data
-
-Schema makers accept `unknown` and return a discriminated `Result`. They do not
-throw validation errors, and successful validation returns the original input.
+For `POST /widgets` with operation ID `catalog.createWidget`, `api.ts` exports
+the `CreateWidget` scope:
 
 ```ts
-import { makeWidgetInput } from './generated/schemas/WidgetInput.js';
+import {
+  CreateWidget,
+  makeUser,
+  makeUserType,
+} from './generated/api.js';
+import type { ShapeOfCreateWidget } from './generated/contracts.js';
 
-const result = makeWidgetInput(input);
+CreateWidget.URL;          // '/widgets'
+CreateWidget.METHOD;       // 'POST'
+CreateWidget.OPERATION_ID; // 'catalog.createWidget'
 
-if (!result.ok) {
-  console.error(result.errors);
-  // Return, log, or throw according to your application's policy.
-  throw new Error('Invalid widget input');
-}
+const request: ShapeOfCreateWidget.Request = {
+  email: 'user@example.com',
+  role: 'admin',
+};
 
-const widgetInput = result.value;
+const requestResult = CreateWidget.makeRequest(request);
+const responseResult = CreateWidget.makeResponse(responseData);
 ```
 
-Each issue has this shape:
+`ShapeOfCreateWidget.Request` and `ShapeOfCreateWidget.Response` are aliases to
+the generated request and response data types. Response types contain data
+only; they are never `{ status, body }` wrappers.
+
+Reusable component schemas produce top-level makers. Every maker returns a
+`Result<ShapeOf...>`:
 
 ```ts
-{
-  path: ['email'],
-  keyword: 'format',
-  message: 'Expected a valid email address'
+const userResult = makeUser(userData);
+const userTypeResult = makeUserType(userTypeData);
+
+if (!userResult.ok) {
+  console.error(userResult.errors);
+} else {
+  return userResult.value;
 }
 ```
 
-The shared runtime types are available from `openapi-contract-kit/runtime`:
+Operation-specific aliases are also generated, including for direct schema
+references:
+
+```ts
+const loginResult = makeLoginResponse(data);
+// Result<ShapeOfLoginResponse>
+```
+
+Successful validation returns the original input reference. Validation never
+throws and never mutates input.
+
+## Optional status validation
+
+Response data validation ignores status by default:
+
+```ts
+const result = CreateWidget.makeResponse(responseData);
+```
+
+Pass status explicitly when it should be checked:
+
+```ts
+const result = CreateWidget.makeResponse(responseData, {
+  status: httpResponse.status,
+});
+
+const isSupported = CreateWidget.makeResponseStatus(httpResponse.status);
+```
+
+`makeResponseStatus` returns a boolean indicating whether the status is
+documented. Status validation does not select the response body schema; the
+response type is the union of all documented response body types. Bodyless
+responses validate `null`.
+
+## Runtime result
+
+The runtime package exports types only:
 
 ```ts
 import type {
@@ -98,176 +128,21 @@ import type {
 } from 'openapi-contract-kit/runtime';
 ```
 
-
-
-## Use generated endpoint modules
-
-For an operation such as `POST /widgets` with operation ID
-`catalog.createWidget`, the generated module exposes metadata, types, and
-validators:
+Results are discriminated by `ok`:
 
 ```ts
-import {
-  METHOD,
-  OPERATION_ID,
-  URL,
-  makeRequest,
-  makeResponse,
-} from './generated/endpoints/CreateWidget.js';
-import type {
-  ShapeOfRequest,
-  ShapeOfResponse,
-} from './generated/endpoints/CreateWidget.js';
-
-URL;          // '/widgets'
-METHOD;       // 'POST'
-OPERATION_ID; // 'catalog.createWidget'
-
-const request: ShapeOfRequest = {
-  email: 'user@example.com',
-  role: 'admin',
-};
-
-const requestResult = makeRequest(request);
+type Result<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly errors: readonly ValidationIssue[] };
 ```
 
-Responses are validated as `{ status, body }`. The generated response types
-keep each status code correlated with its body type:
+## Supported input
 
-```ts
-const responseResult = makeResponse({
-  status: 201,
-  body: responseBody,
-});
+The generator supports OpenAPI 3.1 JSON, YAML, objects, primitive types,
+nullable values, arrays, enums, constants, unions, local references,
+additional-property rules, string and numeric constraints, and email format
+validation.
 
-if (!responseResult.ok) {
-  throw new Error('The server returned an invalid response');
-}
-
-const response: ShapeOfResponse = responseResult.value;
-```
-
-Use the attached validators when the calling context already knows whether the
-response should be successful or an error:
-
-```ts
-const success = makeResponse.success({ status: 201, body: responseBody });
-const failure = makeResponse.error({ status: 400, body: errorBody });
-```
-
-Bodyless responses use `body: null`. Undocumented statuses and mismatched body
-shapes return validation issues.
-
-## Use with Fetch
-
-```ts
-const httpResponse = await fetch(URL, {
-  method: METHOD,
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(request),
-});
-
-const body = httpResponse.status === 204
-  ? null
-  : await httpResponse.json();
-
-const validated = makeResponse({
-  status: httpResponse.status,
-  body,
-});
-
-if (!validated.ok) {
-  throw new Error(`Invalid ${OPERATION_ID} response`);
-}
-
-return validated.value;
-```
-
-
-
-## Use with Axios
-
-```ts
-const httpResponse = await axios.post(URL, request);
-
-const validated = makeResponse({
-  status: httpResponse.status,
-  body: httpResponse.data,
-});
-
-if (!validated.ok) {
-  throw new Error('Invalid API response');
-}
-
-return validated.value.body;
-```
-
-Axios errors can be handled in the same way by validating the response carried
-on the error, when present:
-
-```ts
-if (axios.isAxiosError(error) && error.response) {
-  const validated = makeResponse.error({
-    status: error.response.status,
-    body: error.response.data,
-  });
-
-  if (!validated.ok) {
-    throw new Error('Invalid API error response');
-  }
-}
-```
-
-
-
-## Use with React Query
-
-Validate inside `queryFn` so React Query receives either typed data or a thrown
-application error:
-
-```ts
-import { useQuery } from '@tanstack/react-query';
-
-function useWidget() {
-  return useQuery({
-    queryKey: ['widget'],
-    queryFn: async () => {
-      const response = await fetch(URL, { method: METHOD });
-      const body = response.status === 204 ? null : await response.json();
-      const validated = makeResponse({ status: response.status, body });
-
-      if (!validated.ok) {
-        throw new Error('Invalid widget response');
-      }
-
-      return validated.value;
-    },
-  });
-}
-```
-
-The caller owns the thrown error. React Query can then expose it through its
-normal loading, error, retry, and success states.
-
-## Supported input and limitations
-
-The generator supports OpenAPI 3.1 JSON, `.yml`, and `.yaml` documents with
-objects, primitive types, nullable values, arrays, enums, constants, unions,
-local `$ref` references, additional-property rules, string and numeric
-constraints, and email format validation.
-
-Currently unsupported:
-
-- Remote or anchor `$ref` references
-- Path and operation parameters
-- Optional request bodies
-- Non-JSON request or response bodies
-- Wildcard or default response statuses
-- Unsupported schema keywords
-
-Generated output is application-specific and should not be published as part of
-this package.
-
-## License
-
-MIT
+Currently unsupported are remote or recursive references, path and operation
+parameters, optional request bodies, non-JSON media types, and default or
+wildcard response statuses.

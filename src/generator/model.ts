@@ -67,12 +67,41 @@ class ModelBuilder {
       this.#collectOperationDrafts()
     );
 
+    const schemas = await this.#registry.build();
+    this.#validateGeneratedNames(operations, schemas);
+
     return {
       operations: operations.sort((left, right) =>
         left.name.localeCompare(right.name)
       ),
-      schemas: await this.#registry.build(),
+      schemas,
     };
+  }
+
+  #validateGeneratedNames(
+    operations: readonly OperationModel[],
+    schemas: readonly { readonly name: string }[]
+  ): void {
+    const names = new Map<string, string>();
+    const candidates = [
+      ...schemas.map(({ name }) => `make${name}`),
+      ...operations.flatMap(({ name }) => [
+        `make${name}Request`,
+        `make${name}Response`,
+        `make${name}ResponseStatus`,
+        name,
+      ]),
+    ];
+    for (const name of candidates) {
+      const key = name.toLowerCase();
+      const existing = names.get(key);
+      if (existing !== undefined && existing !== name) {
+        throw new Error(
+          `Generated API name collision for "${name}" and "${existing}"`
+        );
+      }
+      names.set(key, name);
+    }
   }
 
   #getRegistry(): SchemaRegistry {
@@ -399,7 +428,6 @@ class ModelBuilder {
             );
 
       result.push({
-        isSuccess: status >= 200 && status <= 299,
         schemaName,
         status,
       });

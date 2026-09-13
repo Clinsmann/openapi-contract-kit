@@ -21,6 +21,7 @@ import {
 } from '../src/generator/generateOpenApiRuntime.js';
 import { resolveGeneratorConfig } from '../src/generator/config.js';
 import { emitSchemaMakers } from '../src/generator/emitMakers.js';
+import { emitEndpointModules } from '../src/generator/emitEndpoints.js';
 import { buildOpenApiModel } from '../src/generator/model.js';
 
 const execFileAsync = promisify(execFile);
@@ -126,22 +127,28 @@ async function compileFixtureProject(directory: string): Promise<void> {
 
   await writeFile(
     consumerPath,
-    `import type { WidgetInput, ShapeOfWidgetInput } from './src/api/generated/contracts';
-import type { ShapeOfResponse } from './src/api/generated/endpoints/CreateWidget';
+    `import type { WidgetInput, ShapeOfWidgetInput, ShapeOfCreateWidget, ShapeOfLoginResponse } from './src/api/generated/contracts';
+import { makeLoginResponse, makeUser } from './src/api/generated/api';
 
 const currentName: WidgetInput = {
   email: 'user@example.com', role: 'admin', score: 10, code: 'ABC', tags: [],
   settings: {}, pet: { kind: 'cat', meows: true }, externalId: 1,
 };
 const legacyName: ShapeOfWidgetInput = currentName;
-const response: ShapeOfResponse = { status: 204, body: null };
+const response: ShapeOfCreateWidget.Response = null;
 void legacyName;
 void response;
+const loginResult = makeLoginResponse({ id: 'user-1', type: { email: 'user@example.com' } });
+if (loginResult.ok) {
+  const login: ShapeOfLoginResponse = loginResult.value;
+  void login;
+}
+void makeUser;
 
 // @ts-expect-error invalid enum value
 const invalidRole: WidgetInput = { ...currentName, role: 'owner' };
-// @ts-expect-error status and body must remain correlated
-const invalidResponse: ShapeOfResponse = { status: 204, body: {} };
+// @ts-expect-error responses contain data, not status/body wrappers
+const invalidResponse: ShapeOfCreateWidget.Response = { status: 204, body: {} };
 void invalidRole;
 void invalidResponse;
 `
@@ -167,13 +174,18 @@ void invalidResponse;
     )}\n`
   );
 
-  await execFileAsync(
-    process.env.TSC_BIN ?? 'tsc',
-    ['--project', tsconfigPath],
-    {
-      cwd: projectRoot,
-    }
-  );
+  try {
+    await execFileAsync(
+      process.env.TSC_BIN ?? 'tsc',
+      ['--project', tsconfigPath],
+      {
+        cwd: projectRoot,
+      }
+    );
+  } catch (error) {
+    const details = error as { stderr?: string; stdout?: string };
+    throw new Error(`${details.stdout ?? ''}${details.stderr ?? ''}`);
+  }
 }
 
 async function captureMainOutput({
@@ -346,7 +358,7 @@ test('runs the compiled CLI entry point', async () => {
     );
 
     assert.equal(stderr, '');
-    assert.equal(stdout, 'Generated 11 schemas and 2 endpoints.\n');
+    assert.equal(stdout, 'Generated 13 schemas and 3 endpoints.\n');
     await access(join(project.outputPath, 'contracts.ts'));
   } finally {
     await rm(project.directory, { force: true, recursive: true });
@@ -377,8 +389,8 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     });
     const secondSnapshot = await snapshotFiles(project.outputPath);
 
-    assert.equal(firstResult.operationCount, 2);
-    assert.equal(firstResult.schemaCount, 11);
+    assert.equal(firstResult.operationCount, 3);
+    assert.equal(firstResult.schemaCount, 13);
     assert.deepEqual(secondResult, firstResult);
     assert.deepEqual(secondSnapshot, firstSnapshot);
     await assert.rejects(
@@ -390,26 +402,18 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
       join(project.outputPath, 'contracts.ts'),
       'utf8'
     );
-    const widgetInputMaker = await readFile(
-      join(project.outputPath, 'schemas/WidgetInput.ts'),
-      'utf8'
-    );
-    const createWidgetEndpoint = await readFile(
-      join(project.outputPath, 'endpoints/CreateWidget.ts'),
-      'utf8'
-    );
+    const api = await readFile(join(project.outputPath, 'api.ts'), 'utf8');
     const sharedValidators = await readFile(
-      join(project.outputPath, 'schemas/validators.ts'),
+      join(project.outputPath, 'validators.ts'),
       'utf8'
     );
     assert.match(types, /export type WidgetInput =/);
     assert.match(types, /export type ShapeOfWidgetInput = WidgetInput;/);
-    assert.match(widgetInputMaker, /from '..\/contracts';/u);
-    assert.match(widgetInputMaker, /import type \{ ShapeOfWidgetInput \}/u);
-    assert.match(widgetInputMaker, /Result<ShapeOfWidgetInput>/u);
-    assert.doesNotMatch(widgetInputMaker, /Result<WidgetInput>/u);
-    assert.match(createWidgetEndpoint, /from '..\/contracts';/u);
-    assert.doesNotMatch(widgetInputMaker, /new RegExp\(/u);
+    assert.match(api, /Result<ShapeOfWidgetInput>/u);
+    assert.match(api, /Result<ShapeOfCreateWidgetResponse>/u);
+    assert.match(api, /CreateWidget =/u);
+    assert.doesNotMatch(api, /\.success|\.error/u);
+    assert.doesNotMatch(api, /new RegExp\(/u);
     assert.match(sharedValidators, /new RegExp\(/u);
     assert.equal(
       (sharedValidators.match(/Expected email format/gu) ?? []).length,
@@ -419,17 +423,18 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     await compileFixtureProject(project.directory);
 
     const compiledRoot = join(project.directory, 'dist/src/api/generated');
-    const { makeWidgetInput } = await import(
-      join(compiledRoot, 'schemas/WidgetInput.js')
-    );
-    const { makeErrorResponse } = await import(
-      join(compiledRoot, 'schemas/ErrorResponse.js')
-    );
-    const { makeResponse } = await import(
-      join(compiledRoot, 'endpoints/CreateWidget.js')
-    );
-    const { makeRequest: makePingRequest, makeResponse: makePingResponse } =
-      await import(join(compiledRoot, 'endpoints/Ping.js'));
+    const {
+      makeWidgetInput,
+      makeErrorResponse,
+      makeCreateWidgetResponse,
+      makePingRequest,
+      makePingResponse,
+      makeLoginResponse,
+      makeUser,
+      makeUserType,
+      CreateWidget,
+      Ping,
+    } = await import(join(compiledRoot, 'api.js'));
 
     const validInput: Record<string, unknown> = {
       email: 'user@example.com',
@@ -445,6 +450,18 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     const validResult = makeWidgetInput(validInput);
     assert.equal(validResult.ok, true);
     assert.equal(validResult.value, validInput);
+    assert.equal(
+      makeUser({ id: 'user-1', type: { email: 'user@example.com' } }).ok,
+      true
+    );
+    assert.equal(makeUserType({ email: 'user@example.com' }).ok, true);
+    assert.equal(
+      makeLoginResponse({
+        id: 'user-1',
+        type: { email: 'user@example.com' },
+      }).ok,
+      true
+    );
 
     const structuralOnlyInput = {
       ...validInput,
@@ -549,25 +566,26 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
       status: 'success',
       data: { ...validInput, id: 'widget-1' },
     };
-    assert.equal(makeResponse({ status: 201, body: responseBody }).ok, true);
-    assert.equal(makeResponse.success({ status: 204, body: null }).ok, true);
+    assert.equal(makeCreateWidgetResponse(responseBody).ok, true);
+    assert.equal(makeCreateWidgetResponse(null, { status: 204 }).ok, true);
     assert.equal(
-      makeResponse.error({
-        status: 422,
-        body: { message: 'Invalid', errors: { email: ['Required'] } },
+      makeCreateWidgetResponse({
+        message: 'Invalid',
+        errors: { email: ['Required'] },
       }).ok,
       true
     );
-    assert.equal(
-      makeResponse.success({ status: 400, body: { message: 'No' } }).ok,
-      false
-    );
-    assert.equal(makeResponse({ status: 299, body: null }).ok, false);
+    assert.equal(makeCreateWidgetResponse({ message: 1 }).ok, false);
+    assert.equal(makeCreateWidgetResponse(null).ok, true);
+    assert.equal(makeCreateWidgetResponse(null, { status: 299 }).ok, false);
+    assert.equal(CreateWidget.makeResponseStatus(201), true);
+    assert.equal(CreateWidget.makeResponseStatus(299), false);
 
     assert.deepEqual(makePingRequest(null), { ok: true, value: null });
     assert.equal(makePingRequest({}).ok, false);
-    assert.equal(makePingResponse({ status: 200, body: null }).ok, true);
-    assert.equal(makePingResponse.error({ status: 500, body: null }).ok, false);
+    assert.equal(makePingResponse(null).ok, true);
+    assert.equal(makePingResponse(null, { status: 500 }).ok, false);
+    assert.equal(Ping.makeResponseStatus(200), true);
   } finally {
     await rm(project.directory, { force: true, recursive: true });
   }
@@ -598,19 +616,25 @@ test('deduplicates identical inline validators across schema makers', async () =
       specPath,
       typesFile: 'contracts.ts',
     });
-    const validators = files.get('schemas/validators.ts');
-    const widgetInput = files.get('schemas/WidgetInput.ts');
-    const signupInput = files.get('schemas/SignupInput.ts');
+    for (const [path, content] of emitEndpointModules(model, {
+      configPath: join(directory, 'openapi.config.json'),
+      outDir: join(directory, 'generated'),
+      runtimeImport: 'openapi-contract-kit/runtime',
+      specPath,
+      typesFile: 'contracts.ts',
+    })) {
+      files.set(path, content);
+    }
+    const validators = files.get('validators.ts');
+    const api = files.get('api.ts');
 
     assert.notEqual(validators, undefined);
-    assert.notEqual(widgetInput, undefined);
-    assert.notEqual(signupInput, undefined);
+    assert.notEqual(api, undefined);
     assert.equal(
       (validators?.match(/Expected email format/gu) ?? []).length,
       1
     );
-    assert.doesNotMatch(widgetInput ?? '', /Expected email format/u);
-    assert.doesNotMatch(signupInput ?? '', /Expected email format/u);
+    assert.match(api ?? '', /makeSignupInput/u);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -624,7 +648,8 @@ test('removes stale owned files and refuses to replace unexpected output', async
       argv: ['--config', project.configPath],
       cwd: projectRoot,
     });
-    await access(join(project.outputPath, 'schemas/Obsolete.ts'));
+    const firstApi = await readFile(join(project.outputPath, 'api.ts'), 'utf8');
+    assert.match(firstApi, /makeObsolete/u);
 
     const spec = JSON.parse(await readFile(project.specPath, 'utf8'));
     delete spec.components.schemas.Obsolete;
@@ -633,10 +658,11 @@ test('removes stale owned files and refuses to replace unexpected output', async
       argv: ['--config', project.configPath],
       cwd: projectRoot,
     });
-    await assert.rejects(
-      access(join(project.outputPath, 'schemas/Obsolete.ts')),
-      /ENOENT/
+    const secondApi = await readFile(
+      join(project.outputPath, 'api.ts'),
+      'utf8'
     );
+    assert.doesNotMatch(secondApi, /makeObsolete/u);
 
     await writeFile(join(project.outputPath, 'manual.ts'), 'manual\n');
     await assert.rejects(
@@ -692,8 +718,8 @@ test('formats interactive CLI output and preserves captured output', async () =>
     assert.match(interactiveSuccess, /\u001b\[/u);
     const plainInteractiveSuccess = stripAnsi(interactiveSuccess);
     assert.match(plainInteractiveSuccess, /✔ OpenAPI generation complete/u);
-    assert.match(plainInteractiveSuccess, /Schemas:\s+11 schemas/u);
-    assert.match(plainInteractiveSuccess, /Endpoints:\s+2 endpoints/u);
+    assert.match(plainInteractiveSuccess, /Schemas:\s+13 schemas/u);
+    assert.match(plainInteractiveSuccess, /Endpoints:\s+3 endpoints/u);
 
     process.env.NO_COLOR = '1';
     const uncoloredSuccess = await captureMainOutput({
@@ -710,7 +736,7 @@ test('formats interactive CLI output and preserves captured output', async () =>
       isTTY: false,
       stream: process.stdout,
     });
-    assert.equal(capturedSuccess, 'Generated 11 schemas and 2 endpoints.\n');
+    assert.equal(capturedSuccess, 'Generated 13 schemas and 3 endpoints.\n');
 
     const interactiveFailure = await captureMainOutput({
       argv: ['--unknown'],

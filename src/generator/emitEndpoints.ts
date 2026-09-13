@@ -1,188 +1,193 @@
+import { renderEntityMakers } from './emitMakers.js';
 import type { GeneratorConfig, OpenApiModel, ResponseModel } from './types.js';
 
-function renderResponseType(responses: readonly ResponseModel[]): string {
-  if (responses.length === 0) {
-    return 'never';
-  }
-
-  return responses
-    .map(({ schemaName, status }) => {
-      const bodyType = schemaName ?? 'null';
-      return `{ readonly status: ${status}; readonly body: ${bodyType} }`;
-    })
-    .join(' | ');
+function indent(lines: readonly string[], amount = 2): string[] {
+  const prefix = ' '.repeat(amount);
+  return lines.map((line) => `${prefix}${line}`);
 }
 
-function renderStatusCases(responses: readonly ResponseModel[]): string {
-  const lines: string[] = [];
+function renderStatusValidator(
+  operation: OpenApiModel['operations'][number]
+): string[] {
+  const statuses = operation.responses.map(({ status }) => status).join(', ');
+  return [
+    `export function make${operation.name}ResponseStatus(status: unknown): boolean {`,
+    ...indent([
+      `return typeof status === 'number' && Number.isInteger(status) && [${statuses}].includes(status);`,
+    ]),
+    '}',
+  ];
+}
 
-  for (const response of responses) {
-    lines.push(`    case ${response.status}: {`);
-    if (response.schemaName === null) {
-      lines.push(
-        `      if (parts.body !== null) {`,
-        `        return failure(['body'], 'nullBody', 'Expected a null response body');`,
-        `      }`,
-        `      return { ok: true, value: { status: ${response.status}, body: null } };`
-      );
-    } else {
-      lines.push(
-        `      const result = make${response.schemaName}(parts.body);`,
-        `      if (!result.ok) {`,
-        `        return result;`,
-        `      }`,
-        `      return { ok: true, value: { status: ${response.status}, body: result.value } };`
-      );
-    }
-    lines.push('    }');
+function renderRequestMaker(
+  operation: OpenApiModel['operations'][number]
+): string[] {
+  const functionName = `make${operation.name}Request`;
+  const resultType = `Result<ShapeOf${operation.name}Request>`;
+
+  if (operation.request.schemaName !== null) {
+    return [
+      `export function ${functionName}(input: unknown): ${resultType} {`,
+      ...indent([`return make${operation.request.schemaName}(input);`]),
+      '}',
+    ];
+  }
+
+  return [
+    `export function ${functionName}(input: unknown): ${resultType} {`,
+    ...indent([
+      'const errors: ValidationIssue[] = [];',
+      'if (input !== null) {',
+      ...indent([
+        "errors.push({ path: [], keyword: 'nullBody', message: 'Expected null' });",
+        'return { ok: false, errors };',
+      ]),
+      '}',
+      'return { ok: true, value: input };',
+    ]),
+    '}',
+  ];
+}
+
+function renderResponseValidation(
+  responses: readonly ResponseModel[]
+): string[] {
+  const schemaNames = [
+    ...new Set(
+      responses
+        .map(({ schemaName }) => schemaName)
+        .filter((name): name is string => name !== null)
+    ),
+  ];
+  const lines = ['const candidateErrorSets: ValidationIssue[][] = [];'];
+
+  if (responses.some(({ schemaName }) => schemaName === null)) {
+    lines.push(
+      'if (input === null) {',
+      ...indent(['return { ok: true, value: input };']),
+      '}'
+    );
+  }
+
+  for (const name of schemaNames) {
+    lines.push(
+      '{',
+      ...indent([
+        'const candidateErrors: ValidationIssue[] = [];',
+        `if (validate${name}(input, [], candidateErrors)) {`,
+        ...indent(['return { ok: true, value: input };']),
+        '}',
+        'candidateErrorSets.push(candidateErrors);',
+      ]),
+      '}'
+    );
   }
 
   lines.push(
-    `    default:`,
-    `      return failure(['status'], 'status', 'Undocumented response status');`
+    "errors.push(...(candidateErrorSets[0] ?? [{ path: [], keyword: 'response', message: 'Invalid response data' }]));",
+    'return { ok: false, errors };'
   );
-  return lines.join('\n');
+  return lines;
 }
 
-function emitEndpoint(
-  operation: OpenApiModel['operations'][number],
-  config: GeneratorConfig
+function renderResponseMaker(
+  operation: OpenApiModel['operations'][number]
+): string[] {
+  const functionName = `make${operation.name}Response`;
+  return [
+    `export function ${functionName}(`,
+    ...indent(['input: unknown,', 'options?: { readonly status: unknown }']),
+    `): Result<ShapeOf${operation.name}Response> {`,
+    ...indent([
+      'const errors: ValidationIssue[] = [];',
+      `if (options !== undefined && !make${operation.name}ResponseStatus(options.status)) {`,
+      ...indent([
+        "errors.push({ path: ['status'], keyword: 'status', message: 'Undocumented response status' });",
+        'return { ok: false, errors };',
+      ]),
+      '}',
+      ...renderResponseValidation(operation.responses),
+    ]),
+    '}',
+  ];
+}
+
+function renderEndpointScope(
+  operation: OpenApiModel['operations'][number]
+): string[] {
+  return [
+    `export const ${operation.name} = {`,
+    ...indent([
+      `URL: ${JSON.stringify(operation.path)},`,
+      `METHOD: ${JSON.stringify(operation.method)},`,
+      `OPERATION_ID: ${JSON.stringify(operation.operationId)},`,
+      `makeRequest: make${operation.name}Request,`,
+      `makeResponse: make${operation.name}Response,`,
+      `makeResponseStatus: make${operation.name}ResponseStatus,`,
+    ]),
+    '} as const;',
+  ];
+}
+
+function renderOperation(
+  operation: OpenApiModel['operations'][number]
 ): string {
-  const successResponses = operation.responses.filter(
-    (response) => response.isSuccess
-  );
-  const errorResponses = operation.responses.filter(
-    (response) => !response.isSuccess
-  );
-  const schemaNames = new Set<string>();
-
-  if (operation.request.schemaName !== null) {
-    schemaNames.add(operation.request.schemaName);
-  }
-  for (const response of operation.responses) {
-    if (response.schemaName !== null) {
-      schemaNames.add(response.schemaName);
-    }
-  }
-
-  const sortedSchemaNames = [...schemaNames].sort();
-  const typeImport =
-    sortedSchemaNames.length === 0
-      ? ''
-      : `import type { ${sortedSchemaNames.join(', ')} } from '../${config.typesFile.slice(0, -3)}';\n`;
-  const makerImports = sortedSchemaNames
-    .map((name) => `import { make${name} } from '../schemas/${name}';`)
-    .join('\n');
-  const requestType = operation.request.schemaName ?? 'null';
-  const requestMaker =
-    operation.request.schemaName === null
-      ? `export function makeRequest(input: unknown): Result<null> {
-  if (input !== null) {
-    return failure([], 'nullBody', 'Expected null');
-  }
-
-  return { ok: true, value: null };
-}`
-      : `export const makeRequest = make${operation.request.schemaName};`;
-
-  return `/**
- * Generated by openapi-contract-kit.
- * Do not edit directly.
- */
-
-import type { Result, ValidationPath } from ${JSON.stringify(config.runtimeImport)};
-${typeImport}${makerImports}${makerImports.length > 0 ? '\n' : ''}
-export const URL = ${JSON.stringify(operation.path)};
-export const METHOD = ${JSON.stringify(operation.method)};
-export const OPERATION_ID = ${JSON.stringify(operation.operationId)};
-
-export type ShapeOfRequest = ${requestType};
-export type ShapeOfSuccessResponse = ${renderResponseType(successResponses)};
-export type ShapeOfErrorResponse = ${renderResponseType(errorResponses)};
-export type ShapeOfResponse = ShapeOfSuccessResponse | ShapeOfErrorResponse;
-
-type ResponseParts = {
-  readonly status: number;
-  readonly body: unknown;
-};
-
-function failure<T>(
-  path: ValidationPath,
-  keyword: string,
-  message: string
-): Result<T> {
-  return { ok: false, errors: [{ path, keyword, message }] };
+  return [
+    ...renderRequestMaker(operation),
+    '',
+    ...renderResponseMaker(operation),
+    '',
+    ...renderStatusValidator(operation),
+    '',
+    ...renderEndpointScope(operation),
+  ].join('\n');
 }
 
-function readResponse(input: unknown): ResponseParts | null {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    return null;
+function renderImports(model: OpenApiModel, config: GeneratorConfig): string[] {
+  const typeNames = [
+    ...model.schemas.map(({ name }) => `ShapeOf${name}`),
+    ...model.operations.flatMap(({ name }) => [
+      `ShapeOf${name}Request`,
+      `ShapeOf${name}Response`,
+    ]),
+  ];
+  const validatorNames = model.schemas.map(({ name }) => `validate${name}`);
+  const imports = [
+    `import type { Result, ValidationIssue } from ${JSON.stringify(config.runtimeImport)};`,
+  ];
+
+  if (typeNames.length > 0) {
+    imports.push(
+      `import type { ${typeNames.join(', ')} } from './${config.typesFile.slice(0, -3)}';`
+    );
   }
-  if (
-    !Object.prototype.hasOwnProperty.call(input, 'status') ||
-    !Object.prototype.hasOwnProperty.call(input, 'body')
-  ) {
-    return null;
+  if (validatorNames.length > 0) {
+    imports.push(
+      `import { ${validatorNames.join(', ')} } from './validators.js';`
+    );
   }
-
-  const status = Reflect.get(input, 'status');
-  if (typeof status !== 'number' || !Number.isInteger(status)) {
-    return null;
-  }
-
-  return { status, body: Reflect.get(input, 'body') };
-}
-
-${requestMaker}
-
-function makeSuccessResponseResult(input: unknown): Result<ShapeOfSuccessResponse> {
-  const parts = readResponse(input);
-  if (parts === null) {
-    return failure([], 'response', 'Expected { status, body }');
-  }
-
-  switch (parts.status) {
-${renderStatusCases(successResponses)}
-  }
-}
-
-function makeErrorResponseResult(input: unknown): Result<ShapeOfErrorResponse> {
-  const parts = readResponse(input);
-  if (parts === null) {
-    return failure([], 'response', 'Expected { status, body }');
-  }
-
-  switch (parts.status) {
-${renderStatusCases(errorResponses)}
-  }
-}
-
-function makeAnyResponse(input: unknown): Result<ShapeOfResponse> {
-  const parts = readResponse(input);
-  if (parts === null) {
-    return failure([], 'response', 'Expected { status, body }');
-  }
-
-  return parts.status >= 200 && parts.status <= 299
-    ? makeSuccessResponseResult(input)
-    : makeErrorResponseResult(input);
-}
-
-export const makeResponse = Object.assign(makeAnyResponse, {
-  success: makeSuccessResponseResult,
-  error: makeErrorResponseResult,
-});
-`;
+  return imports;
 }
 
 export function emitEndpointModules(
   model: OpenApiModel,
   config: GeneratorConfig
 ): Map<string, string> {
-  return new Map(
-    model.operations.map((operation) => [
-      `endpoints/${operation.name}.ts`,
-      emitEndpoint(operation, config),
-    ])
-  );
+  const sections = [
+    '/**',
+    ' * Generated by openapi-contract-kit.',
+    ' * Do not edit directly.',
+    ' */',
+    '',
+    ...renderImports(model, config),
+    '',
+    renderEntityMakers(model),
+    '',
+    ...model.operations.flatMap((operation, index) => [
+      renderOperation(operation),
+      ...(index === model.operations.length - 1 ? [] : ['']),
+    ]),
+    '',
+  ];
+  return new Map([['api.ts', sections.join('\n')]]);
 }

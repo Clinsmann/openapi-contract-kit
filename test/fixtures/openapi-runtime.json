@@ -48,6 +48,36 @@
         }
       }
     },
+    "/login": {
+      "post": {
+        "operationId": "auth.login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserType"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ValidationException"
+          }
+        }
+      }
+    },
     "/ping": {
       "post": {
         "operationId": "system.ping",
@@ -241,6 +271,23 @@
       },
       "Obsolete": {
         "type": "string"
+      },
+      "UserType": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" }
+        },
+        "required": ["email"],
+        "additionalProperties": false
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "$ref": "#/components/schemas/UserType" }
+        },
+        "required": ["id", "type"],
+        "additionalProperties": false
       }
     }
   }

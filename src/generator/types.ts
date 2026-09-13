@@ -58,7 +58,6 @@ export type SchemaEntry = {
 };
 
 export type ResponseModel = {
-  readonly isSuccess: boolean;
   readonly schemaName: string | null;
   readonly status: number;
 };
