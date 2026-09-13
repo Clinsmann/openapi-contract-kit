@@ -1,9 +1,11 @@
 # Changelog
 
+## [0.0.6] - 2026-09-13
+
+- Consolidated generated API output into a single `api.ts` file with operation-specific request and response makers.
+- Added YAML OpenAPI document support and configurable root schema type filenames.
+- Improved generated validation behavior, including status-independent responses and deduplicated inline validators.
 - Require a configurable `typesFile` value for generated root schema types and add the `--types-file` CLI override.
-
-<!-- unpublished -->
-
 - Accept `.json`, `.yml`, and `.yaml` OpenAPI documents using extension-based parsing.
 
 
