@@ -2,10 +2,6 @@
 
 ![CI](https://github.com/Clinsmann/openapi-contract-kit/actions/workflows/ci.yml/badge.svg)
 
-![npm package size](https://img.shields.io/npm/package-size/openapi-contract-kit)
-
-![npm unpacked size](https://img.shields.io/npm/unpacked-size/openapi-contract-kit)
-
 
 Generate TypeScript types and runtime validators from OpenAPI 3.1 documents.
 The generated code validates data; your HTTP client owns transport and error
