@@ -13,6 +13,8 @@
 - [ ] Add the published npm package link to the README.
 - [x] Type validated maker results with their validated shape, e.g. `makeAuthenticatedUser` returns `Result<ShapeOfAuthenticatedUser>`.
 - [ ] Support for path-item reference
+- [ ] Add a simple default for the "typesFile", "outDir" and "runtimeImport" config and also update the readme to reflect this.
+- [ ] There is a bug, there are duplicate identifiers in the contract.ts which should never happen.
 
 **Definition of done**
 

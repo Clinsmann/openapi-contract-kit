@@ -22,6 +22,10 @@ function renderStatusValidator(
 function renderRequestMaker(
   operation: OpenApiModel['operations'][number]
 ): string[] {
+  if (operation.request.schemaName === `${operation.name}Request`) {
+    return [];
+  }
+
   const functionName = `make${operation.name}Request`;
   const resultType = `Result<ShapeOf${operation.name}Request>`;
 
@@ -145,10 +149,12 @@ function renderOperation(
 
 function renderImports(model: OpenApiModel, config: GeneratorConfig): string[] {
   const typeNames = [
-    ...model.schemas.map(({ name }) => `ShapeOf${name}`),
-    ...model.operations.flatMap(({ name }) => [
-      `ShapeOf${name}Request`,
-      `ShapeOf${name}Response`,
+    ...new Set([
+      ...model.schemas.map(({ name }) => `ShapeOf${name}`),
+      ...model.operations.flatMap(({ name }) => [
+        `ShapeOf${name}Request`,
+        `ShapeOf${name}Response`,
+      ]),
     ]),
   ];
   const validatorNames = model.schemas.map(({ name }) => `validate${name}`);

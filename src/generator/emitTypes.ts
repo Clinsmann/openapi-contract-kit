@@ -107,10 +107,22 @@ export function emitRootTypes(model: OpenApiModel): string {
       .map(({ status }) => status)
       .join(' | ');
     return [
-      `export type ${operation.name}Request = ${requestType};`,
-      `export type ShapeOf${operation.name}Request = ${operation.name}Request;`,
-      `export type ${operation.name}Response = ${responseTypes};`,
-      `export type ShapeOf${operation.name}Response = ${operation.name}Response;`,
+      ...(requestType === `${operation.name}Request`
+        ? []
+        : [`export type ${operation.name}Request = ${requestType};`]),
+      ...(requestType === `${operation.name}Request`
+        ? []
+        : [
+            `export type ShapeOf${operation.name}Request = ${operation.name}Request;`,
+          ]),
+      ...(responseTypes === `${operation.name}Response`
+        ? []
+        : [`export type ${operation.name}Response = ${responseTypes};`]),
+      ...(responseTypes === `${operation.name}Response`
+        ? []
+        : [
+            `export type ShapeOf${operation.name}Response = ${operation.name}Response;`,
+          ]),
       `export type ShapeOf${operation.name}ResponseStatus = ${statuses};`,
       `export declare namespace ShapeOf${operation.name} {\n  export type Request = ShapeOf${operation.name}Request;\n  export type Response = ShapeOf${operation.name}Response;\n  export type ResponseStatus = ShapeOf${operation.name}ResponseStatus;\n}`,
     ];

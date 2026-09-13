@@ -591,6 +591,56 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
   }
 });
 
+test('does not emit self-referential operation type aliases', async () => {
+  const project = await createFixtureProject();
+
+  try {
+    const spec = JSON.parse(await readFile(project.specPath, 'utf8')) as {
+      paths: Record<string, Record<string, unknown>>;
+    };
+    spec.paths['/forgot-password'] = {
+      post: {
+        operationId: 'auth.forgotPassword',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { email: { type: 'string' } },
+                required: ['email'],
+              },
+            },
+          },
+        },
+        responses: { '204': { description: 'Accepted' } },
+      },
+    };
+    await writeFile(project.specPath, `${JSON.stringify(spec, null, 2)}\n`);
+
+    await generateOpenApiRuntime({
+      argv: ['--config', project.configPath],
+      cwd: projectRoot,
+    });
+
+    const types = await readFile(
+      join(project.outputPath, 'contracts.ts'),
+      'utf8'
+    );
+    assert.equal(
+      (types.match(/export type ForgotPasswordRequest =/gu) ?? []).length,
+      1
+    );
+    assert.doesNotMatch(
+      types,
+      /export type ForgotPasswordRequest = ForgotPasswordRequest;/u
+    );
+    await compileFixtureProject(project.directory);
+  } finally {
+    await rm(project.directory, { force: true, recursive: true });
+  }
+});
+
 test('deduplicates identical inline validators across schema makers', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'quickpay-openapi-dedupe-'));
   const specPath = join(directory, 'openapi.json');

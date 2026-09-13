@@ -50,6 +50,30 @@ type ResolvedObject = {
   readonly value: UnknownRecord;
 };
 
+function responseTypeNames(operation: OperationModel): string {
+  return [
+    ...new Set(
+      operation.responses.map(({ schemaName }) => schemaName ?? 'null')
+    ),
+  ].join(' | ');
+}
+
+function validateUniqueGeneratedNames(
+  namesToValidate: readonly string[]
+): void {
+  const names = new Map<string, string>();
+  for (const name of namesToValidate) {
+    const key = name.toLowerCase();
+    const existing = names.get(key);
+    if (existing !== undefined) {
+      throw new Error(
+        `Generated API name collision for "${name}" and "${existing}"`
+      );
+    }
+    names.set(key, name);
+  }
+}
+
 class ModelBuilder {
   #documents = new DocumentStore();
   #registry: SchemaRegistry | null = null;
@@ -82,26 +106,41 @@ class ModelBuilder {
     operations: readonly OperationModel[],
     schemas: readonly { readonly name: string }[]
   ): void {
-    const names = new Map<string, string>();
-    const candidates = [
+    validateUniqueGeneratedNames([
+      ...schemas.flatMap(({ name }) => [name, `ShapeOf${name}`]),
+      ...operations.flatMap((operation) => {
+        const requestType = operation.request.schemaName;
+        const responseTypes = responseTypeNames(operation);
+        return [
+          ...(requestType === `${operation.name}Request`
+            ? []
+            : [`${operation.name}Request`]),
+          ...(responseTypes === `${operation.name}Response`
+            ? []
+            : [`${operation.name}Response`]),
+          ...(requestType === `${operation.name}Request`
+            ? []
+            : [`ShapeOf${operation.name}Request`]),
+          ...(responseTypes === `${operation.name}Response`
+            ? []
+            : [`ShapeOf${operation.name}Response`]),
+          `ShapeOf${operation.name}ResponseStatus`,
+          `ShapeOf${operation.name}`,
+        ];
+      }),
+    ]);
+
+    validateUniqueGeneratedNames([
       ...schemas.map(({ name }) => `make${name}`),
-      ...operations.flatMap(({ name }) => [
-        `make${name}Request`,
-        `make${name}Response`,
-        `make${name}ResponseStatus`,
-        name,
+      ...operations.flatMap((operation) => [
+        ...(operation.request.schemaName === `${operation.name}Request`
+          ? []
+          : [`make${operation.name}Request`]),
+        `make${operation.name}Response`,
+        `make${operation.name}ResponseStatus`,
+        operation.name,
       ]),
-    ];
-    for (const name of candidates) {
-      const key = name.toLowerCase();
-      const existing = names.get(key);
-      if (existing !== undefined && existing !== name) {
-        throw new Error(
-          `Generated API name collision for "${name}" and "${existing}"`
-        );
-      }
-      names.set(key, name);
-    }
+    ]);
   }
 
   #getRegistry(): SchemaRegistry {

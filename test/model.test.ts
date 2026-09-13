@@ -225,6 +225,15 @@ test('rejects ambiguous generated names and operation IDs', async () => {
     },
   };
   await expectModelFailure(duplicateOperationId, /Duplicate operationId/);
+
+  const contractNameCollision = createSpec();
+  contractNameCollision.components.schemas = {
+    RunRequest: { type: 'string' },
+  };
+  await expectModelFailure(
+    contractNameCollision,
+    /Generated API name collision/
+  );
 });
 
 test('fails closed for unsupported operation inputs and response variants', async () => {
