@@ -23,12 +23,13 @@ export async function generateOpenApiRuntime(
   const config = await resolveGeneratorConfig({ argv, cwd });
   const model = await buildOpenApiModel(config.specPath);
   const files = new Map<string, string>([
-    ['quickpay-api.ts', emitRootTypes(model)],
+    [config.typesFile, emitRootTypes(model)],
     ...emitSchemaMakers(model, config),
     ...emitEndpointModules(model, config),
   ]);
 
   await writeGeneratedOutput(config.outDir, files, {
+    generatedRootFile: config.typesFile,
     protectedPaths: [config.configPath, config.specPath],
   });
 

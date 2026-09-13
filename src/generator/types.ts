@@ -84,6 +84,7 @@ export type GeneratorConfig = {
   readonly outDir: string;
   readonly runtimeImport: string;
   readonly specPath: string;
+  readonly typesFile: string;
 };
 
 export type GenerateOpenApiRuntimeOptions = {
