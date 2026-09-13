@@ -69,7 +69,7 @@ function emitEndpoint(
   const typeImport =
     sortedSchemaNames.length === 0
       ? ''
-      : `import type { ${sortedSchemaNames.join(', ')} } from '../quickpay-api';\n`;
+      : `import type { ${sortedSchemaNames.join(', ')} } from '../${config.typesFile.slice(0, -3)}';\n`;
   const makerImports = sortedSchemaNames
     .map((name) => `import { make${name} } from '../schemas/${name}';`)
     .join('\n');

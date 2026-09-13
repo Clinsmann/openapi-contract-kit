@@ -83,6 +83,7 @@ async function createFixtureProject(): Promise<FixtureProject> {
         specPath: 'openapi.json',
         outDir: 'src/api/generated',
         runtimeImport: 'openapi-contract-kit/runtime',
+        typesFile: 'contracts.ts',
       },
       null,
       2
@@ -125,7 +126,7 @@ async function compileFixtureProject(directory: string): Promise<void> {
 
   await writeFile(
     consumerPath,
-    `import type { WidgetInput, ShapeOfWidgetInput } from './src/api/generated/quickpay-api';
+    `import type { WidgetInput, ShapeOfWidgetInput } from './src/api/generated/contracts';
 import type { ShapeOfResponse } from './src/api/generated/endpoints/CreateWidget';
 
 const currentName: WidgetInput = {
@@ -226,6 +227,62 @@ test('resolves config paths relative to the config file and CLI paths from cwd',
     });
     assert.equal(fromConfig.specPath, project.specPath);
     assert.equal(fromConfig.outDir, project.outputPath);
+    assert.equal(fromConfig.typesFile, 'contracts.ts');
+
+    await writeFile(
+      project.configPath,
+      `${JSON.stringify(
+        {
+          specPath: 'openapi.json',
+          outDir: 'src/api/generated',
+          runtimeImport: 'openapi-contract-kit/runtime',
+        },
+        null,
+        2
+      )}\n`
+    );
+    await assert.rejects(
+      resolveGeneratorConfig({
+        argv: ['--config', project.configPath],
+        cwd: projectRoot,
+      }),
+      /requires a non-empty "typesFile"/
+    );
+
+    await writeFile(
+      project.configPath,
+      `${JSON.stringify(
+        {
+          specPath: 'openapi.json',
+          outDir: 'src/api/generated',
+          runtimeImport: 'openapi-contract-kit/runtime',
+          typesFile: '../contracts.ts',
+        },
+        null,
+        2
+      )}\n`
+    );
+    await assert.rejects(
+      resolveGeneratorConfig({
+        argv: ['--config', project.configPath],
+        cwd: projectRoot,
+      }),
+      /root-level \.ts filename/
+    );
+
+    await writeFile(
+      project.configPath,
+      `${JSON.stringify(
+        {
+          specPath: 'openapi.json',
+          outDir: 'src/api/generated',
+          runtimeImport: 'openapi-contract-kit/runtime',
+          typesFile: 'contracts.ts',
+        },
+        null,
+        2
+      )}\n`
+    );
 
     const fromCli = await resolveGeneratorConfig({
       argv: [
@@ -235,11 +292,14 @@ test('resolves config paths relative to the config file and CLI paths from cwd',
         'test/fixtures/openapi-runtime.json',
         '--out',
         'tmp-generated',
+        '--types-file',
+        'cli-contracts.ts',
       ],
       cwd: projectRoot,
     });
     assert.equal(fromCli.specPath, fixturePath);
     assert.equal(fromCli.outDir, join(projectRoot, 'tmp-generated'));
+    assert.equal(fromCli.typesFile, 'cli-contracts.ts');
 
     await assert.rejects(
       resolveGeneratorConfig({
@@ -253,6 +313,7 @@ test('resolves config paths relative to the config file and CLI paths from cwd',
       specPath: 'openapi.json',
       outDir: '.',
       runtimeImport: 'openapi-contract-kit/runtime',
+      typesFile: 'contracts.ts',
     };
     await writeFile(
       project.configPath,
@@ -286,7 +347,7 @@ test('runs the compiled CLI entry point', async () => {
 
     assert.equal(stderr, '');
     assert.equal(stdout, 'Generated 11 schemas and 2 endpoints.\n');
-    await access(join(project.outputPath, 'quickpay-api.ts'));
+    await access(join(project.outputPath, 'contracts.ts'));
   } finally {
     await rm(project.directory, { force: true, recursive: true });
   }
@@ -326,11 +387,15 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     );
 
     const types = await readFile(
-      join(project.outputPath, 'quickpay-api.ts'),
+      join(project.outputPath, 'contracts.ts'),
       'utf8'
     );
     const widgetInputMaker = await readFile(
       join(project.outputPath, 'schemas/WidgetInput.ts'),
+      'utf8'
+    );
+    const createWidgetEndpoint = await readFile(
+      join(project.outputPath, 'endpoints/CreateWidget.ts'),
       'utf8'
     );
     const sharedValidators = await readFile(
@@ -339,6 +404,11 @@ test('generates deterministic types, standalone makers, and endpoint contracts',
     );
     assert.match(types, /export type WidgetInput =/);
     assert.match(types, /export type ShapeOfWidgetInput = WidgetInput;/);
+    assert.match(widgetInputMaker, /from '..\/contracts';/u);
+    assert.match(widgetInputMaker, /import type \{ ShapeOfWidgetInput \}/u);
+    assert.match(widgetInputMaker, /Result<ShapeOfWidgetInput>/u);
+    assert.doesNotMatch(widgetInputMaker, /Result<WidgetInput>/u);
+    assert.match(createWidgetEndpoint, /from '..\/contracts';/u);
     assert.doesNotMatch(widgetInputMaker, /new RegExp\(/u);
     assert.match(sharedValidators, /new RegExp\(/u);
     assert.equal(
@@ -526,6 +596,7 @@ test('deduplicates identical inline validators across schema makers', async () =
       outDir: join(directory, 'generated'),
       runtimeImport: 'openapi-contract-kit/runtime',
       specPath,
+      typesFile: 'contracts.ts',
     });
     const validators = files.get('schemas/validators.ts');
     const widgetInput = files.get('schemas/WidgetInput.ts');

@@ -7,14 +7,21 @@ import type {
   UnknownRecord,
 } from './types.js';
 
-const CONFIG_KEYS = new Set(['specPath', 'outDir', 'runtimeImport']);
-type CliConfigKey = 'configPath' | 'outDir' | 'runtimeImport' | 'specPath';
+const CONFIG_KEYS = new Set([
+  'specPath',
+  'outDir',
+  'runtimeImport',
+  'typesFile',
+]);
+type CliConfigKey =
+  'configPath' | 'outDir' | 'runtimeImport' | 'specPath' | 'typesFile';
 
 const FLAG_NAMES = new Map<string, CliConfigKey>([
   ['--config', 'configPath'],
   ['--spec', 'specPath'],
   ['--out', 'outDir'],
   ['--runtime-import', 'runtimeImport'],
+  ['--types-file', 'typesFile'],
 ]);
 
 type CliOptions = Partial<Record<CliConfigKey, string>>;
@@ -38,7 +45,12 @@ function parseArguments(argv: readonly string[], cwd: string): CliOptions {
       throw new Error(`Missing value for "${flag}"`);
     }
 
-    values[key] = isAbsolute(value) ? value : resolve(cwd, value);
+    values[key] =
+      key === 'typesFile'
+        ? value
+        : isAbsolute(value)
+          ? value
+          : resolve(cwd, value);
   }
 
   return values;
@@ -53,6 +65,23 @@ function requirePath(
 
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`Config "${configPath}" requires a non-empty "${key}"`);
+  }
+
+  return value;
+}
+
+function requireTypesFile(config: UnknownRecord, configPath: string): string {
+  const value = requirePath(config, 'typesFile', configPath);
+  if (
+    !value.endsWith('.ts') ||
+    value.includes('/') ||
+    value.includes('\\') ||
+    value === '.' ||
+    value === '..'
+  ) {
+    throw new Error(
+      `Config "${configPath}" requires "typesFile" to be a root-level .ts filename`
+    );
   }
 
   return value;
@@ -103,5 +132,6 @@ export async function resolveGeneratorConfig(
     specPath: cli.specPath ?? resolveConfigPath('specPath'),
     outDir: cli.outDir ?? resolveConfigPath('outDir'),
     runtimeImport,
+    typesFile: cli.typesFile ?? requireTypesFile(config, configPath),
   };
 }

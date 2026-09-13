@@ -18,10 +18,8 @@ import {
 } from 'node:path';
 
 const MANIFEST_FILE = '.openapi-runtime-manifest.json';
-const LEGACY_GENERATED_FILE =
-  /^(?:quickpay-api\.ts|(?:endpoints|schemas)\/[^/]+\.ts)$/u;
-
 type OutputOptions = {
+  readonly generatedRootFile: string;
   readonly protectedPaths?: readonly string[];
 };
 
@@ -104,7 +102,10 @@ function validateOutputRoot(
   }
 }
 
-async function validateExistingOutput(outDir: string): Promise<boolean> {
+async function validateExistingOutput(
+  outDir: string,
+  generatedRootFile: string
+): Promise<boolean> {
   if (!(await exists(outDir))) {
     return false;
   }
@@ -116,7 +117,9 @@ async function validateExistingOutput(outDir: string): Promise<boolean> {
 
   if (!existingFiles.includes(MANIFEST_FILE)) {
     const unexpected = existingFiles.find(
-      (file) => !LEGACY_GENERATED_FILE.test(file)
+      (file) =>
+        file !== generatedRootFile &&
+        !/^(?:endpoints|schemas)\/[^/]+\.ts$/u.test(file)
     );
     if (unexpected !== undefined) {
       throw new Error(
@@ -173,11 +176,15 @@ async function writeStage(
 export async function writeGeneratedOutput(
   outDir: string,
   files: ReadonlyMap<string, string>,
-  options: OutputOptions = {}
+  options: OutputOptions
 ): Promise<void> {
   const protectedPaths = options.protectedPaths ?? [];
+  const { generatedRootFile } = options;
   validateOutputRoot(outDir, protectedPaths);
-  const hadExistingOutput = await validateExistingOutput(outDir);
+  const hadExistingOutput = await validateExistingOutput(
+    outDir,
+    generatedRootFile
+  );
   const parent = dirname(outDir);
   await mkdir(parent, { recursive: true });
   const swapRoot = await mkdtemp(

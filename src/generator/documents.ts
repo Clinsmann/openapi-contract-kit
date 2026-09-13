@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
+import { parseDocument } from 'yaml';
 
 import type { ResolvedReference, UnknownRecord } from './types.js';
 
@@ -64,14 +65,23 @@ export class DocumentStore {
 
     try {
       const extension = extname(documentPath).toLowerCase();
-      if (extension !== '.json') {
-        throw new Error('Only JSON OpenAPI documents are supported');
+      let parsed: unknown;
+      if (extension === '.json') {
+        parsed = JSON.parse(source);
+      } else if (extension === '.yml' || extension === '.yaml') {
+        const document = parseDocument(source, { uniqueKeys: true });
+        if (document.errors.length > 0) {
+          throw new Error(
+            document.errors.map((error) => error.message).join('; ')
+          );
+        }
+        parsed = document.toJS();
+      } else {
+        throw new Error(
+          `Unsupported OpenAPI document extension "${extension}"; expected .json, .yml, or .yaml`
+        );
       }
-      return requireRecord(
-        JSON.parse(source),
-        documentPath,
-        'OpenAPI document'
-      );
+      return requireRecord(parsed, documentPath, 'OpenAPI document');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(

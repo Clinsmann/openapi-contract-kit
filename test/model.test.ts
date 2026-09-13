@@ -69,25 +69,20 @@ async function expectModelFailure(
 
 test('loads JSON and resolves a local external schema by canonical name', async () => {
   await withDirectory(async (directory) => {
-    const sharedPath = join(directory, 'shared.json');
+    const sharedPath = join(directory, 'shared.yaml');
     const specPath = join(directory, 'openapi.json');
     await writeFile(
       sharedPath,
-      `${JSON.stringify(
-        {
-          components: {
-            schemas: {
-              ExternalInput: {
-                type: 'object',
-                properties: { value: { type: 'string' } },
-                required: ['value'],
-              },
-            },
-          },
-        },
-        null,
-        2
-      )}\n`
+      `components:
+  schemas:
+    ExternalInput:
+      type: object
+      properties:
+        value:
+          type: string
+      required:
+        - value
+`
     );
     await writeFile(
       specPath,
@@ -104,7 +99,7 @@ test('loads JSON and resolves a local external schema by canonical name', async 
                   content: {
                     'application/json': {
                       schema: {
-                        $ref: './shared.json#/components/schemas/ExternalInput',
+                        $ref: './shared.yaml#/components/schemas/ExternalInput',
                       },
                     },
                   },
@@ -132,13 +127,59 @@ test('loads JSON and resolves a local external schema by canonical name', async 
   });
 });
 
-test('rejects YAML OpenAPI documents', async () => {
+test('loads YAML documents by extension', async () => {
   await withDirectory(async (directory) => {
-    const specPath = join(directory, 'openapi.yaml');
-    await writeFile(specPath, JSON.stringify(createSpec()));
+    const yaml = `openapi: 3.1.0
+info:
+  title: YAML model test
+  version: 1.0.0
+paths:
+  /test:
+    post:
+      operationId: test.run
+      responses:
+        '200':
+          description: Success
+components:
+  schemas:
+    Value: &value
+      type: string
+    Alias: *value
+`;
+
+    for (const extension of ['.yml', '.yaml']) {
+      const specPath = join(directory, `openapi${extension}`);
+      await writeFile(specPath, yaml);
+      const model = await buildOpenApiModel(specPath);
+      assert.deepEqual(
+        model.schemas.map(({ name }) => name),
+        ['Alias', 'Value']
+      );
+    }
+  });
+});
+
+test('reports YAML parse errors and unsupported document extensions', async () => {
+  await withDirectory(async (directory) => {
+    const malformedPath = join(directory, 'malformed.yaml');
+    await writeFile(malformedPath, 'openapi: [3.1.0\n');
     await assert.rejects(
-      buildOpenApiModel(specPath),
-      /Only JSON OpenAPI documents are supported/
+      buildOpenApiModel(malformedPath),
+      /Unable to parse OpenAPI document.*malformed\.yaml/u
+    );
+
+    const duplicatePath = join(directory, 'duplicate.yaml');
+    await writeFile(duplicatePath, 'openapi: 3.1.0\nopenapi: 3.1.0\n');
+    await assert.rejects(
+      buildOpenApiModel(duplicatePath),
+      /Unable to parse OpenAPI document.*duplicate\.yaml/u
+    );
+
+    const unsupportedPath = join(directory, 'openapi.txt');
+    await writeFile(unsupportedPath, JSON.stringify(createSpec()));
+    await assert.rejects(
+      buildOpenApiModel(unsupportedPath),
+      /Unsupported OpenAPI document extension ".txt"/u
     );
   });
 });
