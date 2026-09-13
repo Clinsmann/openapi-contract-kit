@@ -13,13 +13,19 @@ Generate TypeScript types and runtime validators from OpenAPI 3.1 documents.
 The generated code validates data; your HTTP client owns transport and error
 handling.
 
-## Install and generate
+## Install
 
 ```bash
 pnpm add -D openapi-contract-kit
 ```
 
-Create `openapi.config.json`:
+Install the package as a development dependency because generation runs while
+building your application, not while handling requests in production.
+
+## Configure
+
+Place your OpenAPI document in the project, for example at `openapi.json`, and
+create `openapi.config.json` in the same project:
 
 ```json
 {
@@ -30,12 +36,56 @@ Create `openapi.config.json`:
 }
 ```
 
-```bash
-openapi-contract-kit
+Configuration paths are relative to `openapi.config.json`. `specPath` selects
+the JSON or YAML OpenAPI 3.1 document, `outDir` selects the generated output
+directory, `runtimeImport` is the package import used by generated code, and
+`typesFile` is the required root-level `.ts` filename for generated types.
+
+## Add a generation script
+
+Add the generator to your application's `package.json`:
+
+```json
+{
+  "scripts": {
+    "generate": "openapi-contract-kit"
+  }
+}
 ```
 
-Generation produces one public runtime module, one type module, and shared
-validators:
+The CLI reads `openapi.config.json` by default. You can override its values
+when needed:
+
+```bash
+openapi-contract-kit --config openapi.config.json \
+  --spec openapi.yaml \
+  --out src/api/generated \
+  --runtime-import openapi-contract-kit/runtime \
+  --types-file contracts.ts
+```
+
+## Generate
+
+Run generation after installing dependencies and whenever the OpenAPI document
+or generator configuration changes:
+
+```bash
+pnpm generate
+```
+
+Generated output is disposable and should not be committed. For the default
+configuration above, add this directory to your application's `.gitignore`:
+
+```gitignore
+src/api/generated/
+```
+
+If you choose another `outDir`, ignore that directory instead.
+
+## Generated files
+
+Generation produces one public runtime module, one type module, shared
+validators, and a manifest used to manage generated output:
 
 ```text
 src/api/generated/
